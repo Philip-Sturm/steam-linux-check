@@ -9,7 +9,7 @@ cd "$PROJECT_DIR" || exit 1
 exit_code=$?
 
 if [ "$exit_code" -eq 0 ] && [ -f "$REPORT_FILE" ]; then
-    nohup xdg-open "$REPORT_FILE" >/dev/null 2>&1 < /dev/null &
+    xdg-open "$REPORT_FILE"
 fi
 
 exit "$exit_code"
