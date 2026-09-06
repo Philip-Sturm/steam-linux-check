@@ -7,7 +7,6 @@ import requests
 from ..cache import is_cache_entry_fresh, load_json, save_json
 from ..models import SteamDeckInfo
 
-
 STEAM_DECK_URL = (
     "https://store.steampowered.com/"
     "saleaction/ajaxgetdeckappcompatibilityreport"
@@ -83,7 +82,19 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
             time.sleep(REQUEST_DELAY)
             return None
 
-        results = data.get("results", {})
+        results = data.get("results")
+
+        if not isinstance(results, dict):
+            cache[cache_key] = {
+                "cached_at": datetime.now(UTC).isoformat(),
+                "data": None,
+            }
+
+            save_json(CACHE_FILE, cache)
+
+            time.sleep(REQUEST_DELAY)
+
+            return None
 
         info = SteamDeckInfo(
             app_id=app_id,

@@ -18,7 +18,10 @@ from steam_linux_check.steam_detector import (
 
 
 def main() -> None:
-    # Steam lokal finden
+    # ---------------------------------------------------------
+    # Lokale Steam-Installation
+    # ---------------------------------------------------------
+
     steam_path = find_steam_installation()
 
     if steam_path is None:
@@ -27,7 +30,6 @@ def main() -> None:
 
     print(f"Steam gefunden: {steam_path}")
 
-    # SteamID64 finden
     steam_id = find_steam_user_id(steam_path)
 
     if steam_id is None:
@@ -36,13 +38,22 @@ def main() -> None:
 
     print(f"SteamID64: {steam_id}")
 
-    # Gesamte Besitzbibliothek abrufen
+    # ---------------------------------------------------------
+    # Besitzbibliothek
+    # ---------------------------------------------------------
+
     owned_games = get_owned_games(steam_id)
 
     print(f"\nBesessene Steam-Spiele: {len(owned_games)}")
 
-    # Steam-Store-Metadaten abrufen
-    print(f"\nSteam-Store-Daten werden geprüft: {len(owned_games)} Spiele")
+    # ---------------------------------------------------------
+    # Steam Store
+    # ---------------------------------------------------------
+
+    print(
+        f"\nSteam-Store-Daten werden geprüft: "
+        f"{len(owned_games)} Spiele"
+    )
 
     store_infos = []
 
@@ -57,7 +68,6 @@ def main() -> None:
         if details is not None:
             store_infos.append(details)
 
-    # Native Linux-Spiele bestimmen
     native_games = [
         game
         for game in store_infos
@@ -73,7 +83,10 @@ def main() -> None:
     print(f"Steam-Store-Daten erhalten: {len(store_infos)}")
     print(f"Native Linux-Spiele: {len(native_games)}")
 
-    # Fehlende Steam-Store-Einträge anzeigen
+    # ---------------------------------------------------------
+    # Fehlende Steam-Store-Daten
+    # ---------------------------------------------------------
+
     store_app_ids = {
         info.app_id
         for info in store_infos
@@ -86,15 +99,24 @@ def main() -> None:
     ]
 
     if missing_store_games:
-        print(f"\nKeine Steam-Store-Daten: {len(missing_store_games)}")
+        print(
+            f"\nKeine Steam-Store-Daten: "
+            f"{len(missing_store_games)}"
+        )
 
         for game in sorted(
             missing_store_games,
             key=lambda game: game.name.lower(),
         ):
-            print(f"  {game.app_id:<10} {game.name}")
+            print(
+                f"  {game.app_id:<10} "
+                f"{game.name}"
+            )
 
-    # ProtonDB nur für nicht-native Spiele abrufen
+    # ---------------------------------------------------------
+    # ProtonDB
+    # ---------------------------------------------------------
+
     print("\nProtonDB-Daten werden geprüft...")
 
     proton_targets = [
@@ -117,10 +139,19 @@ def main() -> None:
             proton_infos.append(info)
 
     print()
-    print(f"ProtonDB-relevante Spiele: {len(proton_targets)}")
-    print(f"ProtonDB-Daten erhalten: {len(proton_infos)}")
+    print(
+        f"ProtonDB-relevante Spiele: "
+        f"{len(proton_targets)}"
+    )
+    print(
+        f"ProtonDB-Daten erhalten: "
+        f"{len(proton_infos)}"
+    )
 
-    # Anti-Cheat-Daten laden
+    # ---------------------------------------------------------
+    # Anti-Cheat
+    # ---------------------------------------------------------
+
     anticheat_games = get_anticheat_games()
 
     anticheat_by_app_id = {
@@ -129,9 +160,53 @@ def main() -> None:
         if game.app_id is not None
     }
 
-    print(f"\nAnti-Cheat-Datensätze: {len(anticheat_games)}")
+    print(
+        f"\nAnti-Cheat-Datensätze: "
+        f"{len(anticheat_games)}"
+    )
 
+    # ---------------------------------------------------------
+    # Steam Deck / SteamOS
+    # ---------------------------------------------------------
+
+    print(
+        "\nSteam-Deck-/SteamOS-Daten "
+        "werden geprüft..."
+    )
+
+    deck_targets = [
+        game
+        for game in owned_games
+        if game.app_id not in native_app_ids
+    ]
+
+    deck_infos = []
+
+    for index, game in enumerate(deck_targets, start=1):
+        print(
+            f"[{index:>3}/{len(deck_targets)}] "
+            f"{game.name}"
+        )
+
+        info = get_steam_deck_info(game.app_id)
+
+        if info is not None:
+            deck_infos.append(info)
+
+    print()
+    print(
+        f"Steam-Deck-relevante Spiele: "
+        f"{len(deck_targets)}"
+    )
+    print(
+        f"Steam-Deck-Daten erhalten: "
+        f"{len(deck_infos)}"
+    )
+
+    # ---------------------------------------------------------
     # Provider-Daten nach AppID indizieren
+    # ---------------------------------------------------------
+
     store_info_by_app = {
         info.app_id: info
         for info in store_infos
@@ -142,7 +217,20 @@ def main() -> None:
         for info in proton_infos
     }
 
-    # Kompatibilität aller Spiele bewerten
+    deck_info_by_app = {
+        info.app_id: info
+        for info in deck_infos
+    }
+
+    owned_game_by_app = {
+        game.app_id: game
+        for game in owned_games
+    }
+
+    # ---------------------------------------------------------
+    # Compatibility Engine
+    # ---------------------------------------------------------
+
     compatibility_results = []
 
     for game in owned_games:
@@ -151,11 +239,11 @@ def main() -> None:
             store_info=store_info_by_app.get(game.app_id),
             proton_info=proton_info_by_app.get(game.app_id),
             anticheat_info=anticheat_by_app_id.get(game.app_id),
+            deck_info=deck_info_by_app.get(game.app_id),
         )
 
         compatibility_results.append(result)
 
-    # Zusammenfassung
     status_counts = Counter(
         result.status.value
         for result in compatibility_results
@@ -163,10 +251,22 @@ def main() -> None:
 
     print("\nCompatibility Summary:")
 
-    for status in ["Native", "Works", "Partial", "Broken", "Unknown"]:
-        print(f"  {status:<8} {status_counts[status]}")
+    for status in [
+        "Native",
+        "Works",
+        "Partial",
+        "Broken",
+        "Unknown",
+    ]:
+        print(
+            f"  {status:<8} "
+            f"{status_counts[status]}"
+        )
 
+    # ---------------------------------------------------------
     # Bekannte Testfälle
+    # ---------------------------------------------------------
+
     print("\nTestfälle:")
 
     test_app_ids = {
@@ -186,7 +286,115 @@ def main() -> None:
                 f"{result.reason}"
             )
 
+    # ---------------------------------------------------------
+    # SteamOS Summary
+    # ---------------------------------------------------------
+
+    steamos_counts = Counter(
+        category_name(info.steamos_category)
+        for info in deck_infos
+    )
+
+    print("\nSteamOS Summary:")
+
+    for status in [
+        "Verified",
+        "Playable",
+        "Unsupported",
+        "Unknown",
+    ]:
+        print(
+            f"  {status:<12} "
+            f"{steamos_counts[status]}"
+        )
+
+    # ---------------------------------------------------------
+    # SteamOS / ProtonDB Konfliktanalyse
+    # ---------------------------------------------------------
+
+    proton_good_steamos_bad = []
+    proton_bad_steamos_good = []
+
+    for app_id, deck_info in deck_info_by_app.items():
+        proton_info = proton_info_by_app.get(app_id)
+
+        if proton_info is None:
+            continue
+
+        game = owned_game_by_app.get(app_id)
+
+        if game is None:
+            continue
+
+        steamos_status = category_name(
+            deck_info.steamos_category
+        )
+
+        proton_tier = proton_info.tier
+
+        if (
+            proton_tier in {"gold", "platinum"}
+            and steamos_status == "Unsupported"
+        ):
+            proton_good_steamos_bad.append(
+                (
+                    game,
+                    proton_tier,
+                    steamos_status,
+                )
+            )
+
+        if (
+            proton_tier
+            in {"bronze", "silver", "borked"}
+            and steamos_status == "Playable"
+        ):
+            proton_bad_steamos_good.append(
+                (
+                    game,
+                    proton_tier,
+                    steamos_status,
+                )
+            )
+
+    print(
+        "\nProtonDB Gold/Platinum "
+        f"+ SteamOS Unsupported: "
+        f"{len(proton_good_steamos_bad)}"
+    )
+
+    for (
+        game,
+        proton_tier,
+        steamos_status,
+    ) in proton_good_steamos_bad:
+        print(
+            f"  {game.name:<40} "
+            f"ProtonDB={proton_tier:<10} "
+            f"SteamOS={steamos_status}"
+        )
+
+    print(
+        "\nProtonDB Bronze/Silver/Borked "
+        f"+ SteamOS Playable: "
+        f"{len(proton_bad_steamos_good)}"
+    )
+
+    for (
+        game,
+        proton_tier,
+        steamos_status,
+    ) in proton_bad_steamos_good:
+        print(
+            f"  {game.name:<40} "
+            f"ProtonDB={proton_tier:<10} "
+            f"SteamOS={steamos_status}"
+        )
+
+    # ---------------------------------------------------------
     # Lokale Steam-Bibliotheken
+    # ---------------------------------------------------------
+
     libraries = find_steam_libraries(steam_path)
 
     print("\nSteam-Bibliotheken:")
@@ -194,27 +402,20 @@ def main() -> None:
     for library in libraries:
         print(f"  - {library}")
 
-    # Lokal installierte Steam-Apps
     apps = find_installed_apps(libraries)
 
-    print(f"\nInstallierte Steam-Apps: {len(apps)}")
+    print(
+        f"\nInstallierte Steam-Apps: "
+        f"{len(apps)}"
+    )
 
-    for app in sorted(apps, key=lambda app: app.name.lower()):
-        print(f"  {app.app_id:<10} {app.name}")
-
-    print("\nSteam Deck Tests:")
-
-    for app_id in [620, 2406770, 359550]:
-        info = get_steam_deck_info(app_id)
-
-        if info is None:
-            print(f"{app_id}: keine Steam-Deck-Daten")
-            continue
-
+    for app in sorted(
+        apps,
+        key=lambda app: app.name.lower(),
+    ):
         print(
-            f"{app_id:<10} "
-            f"Deck={category_name(info.deck_category):<12} "
-            f"SteamOS={category_name(info.steamos_category)}"
+            f"  {app.app_id:<10} "
+            f"{app.name}"
         )
 
 
