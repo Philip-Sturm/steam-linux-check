@@ -21,7 +21,7 @@ from steam_linux_check.steam_detector import (
 )
 
 
-def main() -> None:
+def main() -> int:
     # ---------------------------------------------------------
     # Steam lokal erkennen
     # ---------------------------------------------------------
@@ -30,7 +30,7 @@ def main() -> None:
 
     if steam_path is None:
         print("Steam-Installation wurde nicht gefunden.")
-        return
+        return 1
 
     print(f"Steam gefunden: {steam_path}")
 
@@ -38,7 +38,7 @@ def main() -> None:
 
     if steam_id is None:
         print("SteamID64 wurde nicht gefunden.")
-        return
+        return 1
 
     print(f"SteamID64: {steam_id}")
 
@@ -66,11 +66,11 @@ def main() -> None:
     try:
         owned_games = get_owned_games(steam_id)
 
-    except RuntimeError as error:
+    except (RuntimeError, TypeError) as error:
         print("\nSteam-Bibliothek konnte nicht geladen werden.")
         print(f"Grund: {error}")
         print("Der Check wird abgebrochen.")
-        return
+        return 1
 
     print(f"Besessene Steam-Spiele: {len(owned_games)}")
 
@@ -192,6 +192,8 @@ def main() -> None:
 
     print("\nAktueller Zustand gespeichert.")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
