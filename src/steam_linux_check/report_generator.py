@@ -14,12 +14,17 @@ CSV_REPORT_FILE = OUTPUT_DIR / "report.csv"
 HTML_REPORT_FILE = OUTPUT_DIR / "report.html"
 
 
-def write_json_report(entries: list[GameReportEntry]) -> Path:
+def write_json_report(
+    entries: list[GameReportEntry],
+) -> Path:
     """Write the compatibility report as JSON."""
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    JSON_REPORT_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    report = {
+    data = {
         "generated_at": datetime.now(UTC).isoformat(),
         "total_games": len(entries),
         "games": [
@@ -30,7 +35,7 @@ def write_json_report(entries: list[GameReportEntry]) -> Path:
 
     JSON_REPORT_FILE.write_text(
         json.dumps(
-            report,
+            data,
             indent=2,
             ensure_ascii=False,
         ),
@@ -40,10 +45,15 @@ def write_json_report(entries: list[GameReportEntry]) -> Path:
     return JSON_REPORT_FILE
 
 
-def write_csv_report(entries: list[GameReportEntry]) -> Path:
+def write_csv_report(
+    entries: list[GameReportEntry],
+) -> Path:
     """Write the compatibility report as CSV."""
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    CSV_REPORT_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     fieldnames = [
         "app_id",
@@ -65,22 +75,34 @@ def write_csv_report(entries: list[GameReportEntry]) -> Path:
         "w",
         encoding="utf-8",
         newline="",
-    ) as csv_file:
+    ) as file:
         writer = csv.DictWriter(
-            csv_file,
+            file,
             fieldnames=fieldnames,
         )
 
         writer.writeheader()
 
         for entry in entries:
-            row = asdict(entry)
-
-            row["anticheats"] = ", ".join(
-                entry.anticheats
+            writer.writerow(
+                {
+                    "app_id": entry.app_id,
+                    "name": entry.name,
+                    "status": entry.status,
+                    "reason": entry.reason,
+                    "native_linux": entry.native_linux,
+                    "protondb_tier": entry.protondb_tier,
+                    "protondb_confidence": entry.protondb_confidence,
+                    "protondb_reports": entry.protondb_reports,
+                    "protondb_trending": entry.protondb_trending,
+                    "steamos_status": entry.steamos_status,
+                    "anticheat_status": entry.anticheat_status,
+                    "anticheats": ", ".join(
+                        entry.anticheats
+                    ),
+                    "installed": entry.installed,
+                }
             )
-
-            writer.writerow(row)
 
     return CSV_REPORT_FILE
 
@@ -88,76 +110,179 @@ def write_csv_report(entries: list[GameReportEntry]) -> Path:
 def write_html_report(
     entries: list[GameReportEntry],
     changes: list[ReportChange] | None = None,
+    degraded_sources: set[str] | None = None,
 ) -> Path:
-    """Write the compatibility report as a modern HTML dashboard."""
+    """Write an interactive HTML compatibility dashboard."""
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    HTML_REPORT_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    status_counts = {
-        status: sum(1 for entry in entries if entry.status == status)
-        for status in [
-            "Native",
-            "Works",
-            "Partial",
-            "Broken",
-            "Unknown",
-        ]
-    }
+    changes = changes or []
+    degraded_sources = degraded_sources or set()
 
-    installed_count = sum(
-        1 for entry in entries if entry.installed
+    generated_at = datetime.now().astimezone().strftime(
+        "%d.%m.%Y %H:%M"
     )
 
     # ---------------------------------------------------------
-    # Änderungen seit letzter Prüfung
+    # Statistiken
     # ---------------------------------------------------------
 
-    changes = changes or []
+    total_count = len(entries)
 
-    if changes:
-        change_items = []
+    native_count = sum(
+        entry.status == "Native"
+        for entry in entries
+    )
 
-        for change in changes:
-            details = "".join(
+    works_count = sum(
+        entry.status == "Works"
+        for entry in entries
+    )
+
+    partial_count = sum(
+        entry.status == "Partial"
+        for entry in entries
+    )
+
+    broken_count = sum(
+        entry.status == "Broken"
+        for entry in entries
+    )
+
+    unknown_count = sum(
+        entry.status == "Unknown"
+        for entry in entries
+    )
+
+    installed_count = sum(
+        entry.installed
+        for entry in entries
+    )
+
+    # ---------------------------------------------------------
+    # Degraded-Warnung
+    # ---------------------------------------------------------
+
+    degraded_banner = ""
+
+    if degraded_sources:
+        source_names = ", ".join(
+            html.escape(source)
+            for source in sorted(degraded_sources)
+        )
+
+        degraded_banner = f"""
+        <section class="warning-banner">
+            <strong>Unvollständiger Check</strong>
+
+            <div>
+                Folgende Datenquellen waren nicht vollständig verfügbar:
+                {source_names}
+            </div>
+
+            <div>
+                Der Änderungsvergleich wurde übersprungen und der letzte
+                vollständige Vergleichszustand wurde nicht überschrieben.
+            </div>
+        </section>
+        """
+
+    # ---------------------------------------------------------
+    # Änderungsbereich
+    # ---------------------------------------------------------
+
+    change_items: list[str] = []
+
+    for change in changes:
+        status_change = ""
+
+        if (
+            change.old_status is not None
+            and change.new_status is not None
+            and change.old_status != change.new_status
+        ):
+            status_change = f"""
+            <div class="change-status">
+                <span class="old-value">
+                    {html.escape(change.old_status)}
+                </span>
+
+                <span class="change-arrow">
+                    →
+                </span>
+
+                <span class="new-value">
+                    {html.escape(change.new_status)}
+                </span>
+            </div>
+            """
+
+        details_html = ""
+
+        if change.details:
+            detail_items = "".join(
                 f"<li>{html.escape(detail)}</li>"
                 for detail in change.details
             )
 
-            status_change = ""
+            details_html = f"""
+            <ul class="change-details">
+                {detail_items}
+            </ul>
+            """
 
-            if (
-                change.old_status is not None
-                and change.new_status is not None
-                and change.old_status != change.new_status
-            ):
-                status_change = (
-                    '<div class="change-status">'
-                    f"{html.escape(change.old_status)} "
-                    f"→ {html.escape(change.new_status)}"
-                    "</div>"
-                )
+        change_type_labels = {
+            "added": "Neu",
+            "removed": "Entfernt",
+            "changed": "Geändert",
+        }
 
-            change_items.append(
-                f"""
-                <div class="change-item">
-                    <div class="change-name">
-                        {html.escape(change.name)}
+        change_label = change_type_labels.get(
+            change.change_type,
+            change.change_type,
+        )
+
+        change_items.append(
+            f"""
+            <article class="change-item">
+                <div class="change-header">
+                    <div>
+                        <strong>
+                            {html.escape(change.name)}
+                        </strong>
+
+                        <span class="change-appid">
+                            AppID {change.app_id}
+                        </span>
                     </div>
 
-                    {status_change}
-
-                    <ul>
-                        {details}
-                    </ul>
+                    <span class="change-type">
+                        {html.escape(change_label)}
+                    </span>
                 </div>
-                """
-            )
 
-        changes_html = "".join(change_items)
+                {status_change}
+                {details_html}
+            </article>
+            """
+        )
+
+    if degraded_sources:
+        changes_content = """
+        <div class="change-empty">
+            Änderungsvergleich für diesen Lauf übersprungen.
+        </div>
+        """
+
+    elif change_items:
+        changes_content = "".join(change_items)
 
     else:
-        changes_html = """
-        <div class="no-changes">
+        changes_content = """
+        <div class="change-empty">
             Keine Änderungen seit der letzten Prüfung.
         </div>
         """
@@ -166,10 +291,62 @@ def write_html_report(
     # Tabellenzeilen
     # ---------------------------------------------------------
 
-    rows = []
+    rows: list[str] = []
 
     for entry in entries:
-        anticheats = ", ".join(entry.anticheats)
+        status_class = (
+            entry.status
+            .lower()
+            .replace(" ", "-")
+        )
+
+        native_text = (
+            "Ja"
+            if entry.native_linux
+            else "Nein"
+        )
+
+        installed_text = (
+            "Ja"
+            if entry.installed
+            else "Nein"
+        )
+
+        protondb_tier = (
+            entry.protondb_tier
+            if entry.protondb_tier is not None
+            else "—"
+        )
+
+        protondb_reports = (
+            str(entry.protondb_reports)
+            if entry.protondb_reports is not None
+            else "—"
+        )
+
+        protondb_trending = (
+            entry.protondb_trending
+            if entry.protondb_trending is not None
+            else "—"
+        )
+
+        steamos_status = (
+            entry.steamos_status
+            if entry.steamos_status is not None
+            else "—"
+        )
+
+        anticheat_status = (
+            entry.anticheat_status
+            if entry.anticheat_status is not None
+            else "—"
+        )
+
+        anticheats = (
+            ", ".join(entry.anticheats)
+            if entry.anticheats
+            else "—"
+        )
 
         rows.append(
             f"""
@@ -177,73 +354,76 @@ def write_html_report(
                 data-status="{html.escape(entry.status)}"
                 data-installed="{str(entry.installed).lower()}"
             >
-                <td class="appid">{entry.app_id}</td>
+                <td class="appid">
+                    {entry.app_id}
+                </td>
 
                 <td class="game-name">
                     {html.escape(entry.name)}
                 </td>
 
                 <td>
-                    <span class="status status-{entry.status.lower()}">
+                    <span class="status-pill status-{status_class}">
                         {html.escape(entry.status)}
                     </span>
                 </td>
 
-                <td>
+                <td class="reason">
                     {html.escape(entry.reason)}
                 </td>
 
                 <td>
-                    {"✓" if entry.native_linux else ""}
+                    {native_text}
                 </td>
 
                 <td>
-                    {html.escape(entry.protondb_tier or "—")}
+                    {html.escape(protondb_tier)}
                 </td>
 
                 <td>
-                    {entry.protondb_reports or "—"}
+                    {html.escape(protondb_reports)}
                 </td>
 
                 <td>
-                    {html.escape(entry.protondb_trending or "—")}
+                    {html.escape(protondb_trending)}
                 </td>
 
                 <td>
-                    {html.escape(entry.steamos_status or "—")}
+                    {html.escape(steamos_status)}
                 </td>
 
                 <td>
-                    {html.escape(entry.anticheat_status or "—")}
+                    {html.escape(anticheat_status)}
                 </td>
 
                 <td>
-                    {html.escape(anticheats or "—")}
+                    {html.escape(anticheats)}
                 </td>
 
                 <td>
-                    {"✓" if entry.installed else ""}
+                    {installed_text}
                 </td>
             </tr>
             """
         )
 
+    rows_html = "".join(rows)
+
     # ---------------------------------------------------------
     # HTML
     # ---------------------------------------------------------
 
-    html_content = f"""<!DOCTYPE html>
+    report = f"""<!DOCTYPE html>
 <html lang="de">
-
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
 
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0"
+        content="width=device-width, initial-scale=1"
     >
 
-    <title>Steam Linux Compatibility</title>
+    <title>Steam Linux Compatibility Report</title>
 
     <style>
         :root {{
@@ -253,19 +433,18 @@ def write_html_report(
             --bg-secondary: #0b1728;
             --panel: #101f33;
             --panel-hover: #142842;
-
             --border: #233b58;
 
-            --text: #e8f0fa;
-            --muted: #8da4bd;
+            --text: #e8eef7;
+            --text-muted: #91a4bc;
 
-            --blue: #3b82f6;
-            --blue-light: #60a5fa;
+            --native: #38d996;
+            --works: #63d48d;
+            --partial: #e5b84d;
+            --broken: #ef6a73;
+            --unknown: #8796aa;
 
-            --green: #34d399;
-            --yellow: #fbbf24;
-            --red: #f87171;
-            --gray: #94a3b8;
+            --accent: #6ba7ff;
         }}
 
         * {{
@@ -278,8 +457,8 @@ def write_html_report(
             background:
                 radial-gradient(
                     circle at top,
-                    #10284a 0%,
-                    var(--bg) 40%
+                    #10284a 0,
+                    var(--bg) 38rem
                 );
 
             color: var(--text);
@@ -294,592 +473,755 @@ def write_html_report(
         }}
 
         .container {{
-            max-width: 1800px;
+            width: min(1600px, calc(100% - 32px));
             margin: 0 auto;
-            padding: 32px;
+            padding: 38px 0 60px;
         }}
 
-        header {{
-            margin-bottom: 28px;
+        .hero {{
+            margin-bottom: 24px;
         }}
 
-        h1 {{
+        .hero h1 {{
+            margin: 0 0 8px;
+
+            font-size: clamp(
+                1.8rem,
+                4vw,
+                2.8rem
+            );
+
+            line-height: 1.1;
+        }}
+
+        .hero p {{
             margin: 0;
-            font-size: 2rem;
-            font-weight: 700;
+            color: var(--text-muted);
         }}
 
-        .subtitle {{
-            margin-top: 8px;
-            color: var(--muted);
+        .warning-banner {{
+            margin: 0 0 24px;
+            padding: 16px 18px;
+
+            border: 1px solid #8a6925;
+            border-radius: 12px;
+
+            background:
+                rgba(138, 105, 37, 0.18);
+
+            line-height: 1.5;
+        }}
+
+        .warning-banner strong {{
+            display: block;
+            margin-bottom: 6px;
+            font-size: 1.05rem;
         }}
 
         .cards {{
             display: grid;
 
             grid-template-columns:
-                repeat(auto-fit, minmax(150px, 1fr));
+                repeat(
+                    auto-fit,
+                    minmax(150px, 1fr)
+                );
 
-            gap: 14px;
+            gap: 12px;
             margin-bottom: 24px;
         }}
 
         .card {{
-            background: rgba(16, 31, 51, 0.92);
+            padding: 18px;
 
             border: 1px solid var(--border);
             border-radius: 14px;
 
-            padding: 18px;
+            background:
+                rgba(16, 31, 51, 0.88);
+
+            box-shadow:
+                0 10px 30px
+                rgba(0, 0, 0, 0.12);
         }}
 
         .card-label {{
-            color: var(--muted);
-            font-size: 0.85rem;
+            margin-bottom: 8px;
+
+            color: var(--text-muted);
+
+            font-size: 0.83rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
         }}
 
         .card-value {{
-            margin-top: 5px;
-
             font-size: 1.8rem;
-            font-weight: 700;
+            font-weight: 750;
         }}
 
         .changes-panel {{
-            margin-bottom: 18px;
-
-            background: var(--panel);
+            margin-bottom: 24px;
 
             border: 1px solid var(--border);
             border-radius: 14px;
+
+            background:
+                rgba(16, 31, 51, 0.9);
 
             overflow: hidden;
         }}
 
         .changes-panel summary {{
-            cursor: pointer;
-
             padding: 16px 18px;
 
-            font-weight: 600;
-
+            cursor: pointer;
             user-select: none;
-        }}
-
-        .changes-panel summary:hover {{
-            background: var(--panel-hover);
-        }}
-
-        .change-count {{
-            margin-left: 8px;
-
-            color: var(--blue-light);
 
             font-weight: 700;
         }}
 
         .changes-content {{
-            padding: 0 18px 16px;
+            padding:
+                0
+                18px
+                18px;
         }}
 
         .change-item {{
-            padding: 12px 0;
+            padding: 14px 0;
 
-            border-top: 1px solid var(--border);
+            border-top:
+                1px solid
+                var(--border);
         }}
 
-        .change-name {{
-            font-weight: 700;
+        .change-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+
+            gap: 12px;
+        }}
+
+        .change-appid {{
+            margin-left: 8px;
+
+            color: var(--text-muted);
+
+            font-size: 0.8rem;
+        }}
+
+        .change-type {{
+            padding: 4px 9px;
+
+            border:
+                1px solid
+                var(--border);
+
+            border-radius: 999px;
+
+            color: var(--text-muted);
+
+            font-size: 0.75rem;
         }}
 
         .change-status {{
-            margin-top: 5px;
+            display: flex;
+            align-items: center;
 
-            color: var(--blue-light);
+            gap: 8px;
+
+            margin-top: 10px;
+
+            font-weight: 700;
         }}
 
-        .change-item ul {{
-            margin: 8px 0 0;
-
-            padding-left: 20px;
-
-            color: var(--muted);
+        .old-value {{
+            color: var(--text-muted);
         }}
 
-        .no-changes {{
-            padding-top: 12px;
+        .new-value {{
+            color: var(--text);
+        }}
 
-            color: var(--muted);
+        .change-arrow {{
+            color: var(--accent);
+        }}
+
+        .change-details {{
+            margin:
+                10px
+                0
+                0
+                18px;
+
+            padding: 0;
+
+            color: var(--text-muted);
+        }}
+
+        .change-empty {{
+            padding-top: 4px;
+            color: var(--text-muted);
         }}
 
         .controls {{
             display: flex;
             flex-wrap: wrap;
+            align-items: center;
 
             gap: 12px;
 
-            align-items: center;
-
-            background: var(--panel);
-
-            border: 1px solid var(--border);
-            border-radius: 14px;
-
-            padding: 16px;
-
-            margin-bottom: 18px;
+            margin-bottom: 16px;
         }}
 
-        input[type="text"] {{
-            flex: 1;
+        .search {{
+            flex: 1 1 300px;
 
-            min-width: 250px;
+            min-width: 220px;
 
-            background: var(--bg-secondary);
+            padding: 11px 13px;
 
             border: 1px solid var(--border);
-            border-radius: 9px;
+            border-radius: 10px;
 
+            background: var(--bg-secondary);
             color: var(--text);
-
-            padding: 10px 14px;
-
-            font-size: 0.95rem;
 
             outline: none;
         }}
 
-        input[type="text"]:focus {{
-            border-color: var(--blue);
+        .search:focus {{
+            border-color: var(--accent);
         }}
 
-        button {{
-            background: #13263e;
+        .filters {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }}
 
-            color: var(--text);
+        .filter-button {{
+            padding: 8px 11px;
 
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 999px;
 
-            padding: 9px 14px;
+            background: var(--panel);
+            color: var(--text);
 
             cursor: pointer;
         }}
 
-        button:hover {{
-            background: #193555;
+        .filter-button:hover {{
+            background: var(--panel-hover);
         }}
 
-        button.active {{
-            background: var(--blue);
-
-            border-color: var(--blue);
+        .filter-button.active {{
+            border-color: var(--accent);
+            background: #17345a;
         }}
 
         .installed-filter {{
-            display: flex;
-
+            display: inline-flex;
             align-items: center;
 
-            gap: 7px;
+            gap: 8px;
 
-            color: var(--muted);
+            color: var(--text-muted);
 
-            user-select: none;
+            font-size: 0.9rem;
         }}
 
         .table-wrapper {{
-            overflow: auto;
-
             border: 1px solid var(--border);
             border-radius: 14px;
 
-            background: var(--panel);
+            background:
+                rgba(11, 23, 40, 0.94);
+
+            overflow: auto;
+
+            box-shadow:
+                0 12px 34px
+                rgba(0, 0, 0, 0.14);
         }}
 
         table {{
             width: 100%;
+            min-width: 1500px;
 
             border-collapse: collapse;
+        }}
 
-            font-size: 0.88rem;
+        thead {{
+            position: sticky;
+            top: 0;
+            z-index: 2;
+
+            background: #102038;
         }}
 
         th {{
-            position: sticky;
-
-            top: 0;
-
-            z-index: 2;
-
-            background: #0d1b2d;
-
-            color: #bcd0e6;
-
-            text-align: left;
-
-            white-space: nowrap;
-
             padding: 13px 12px;
 
-            border-bottom: 1px solid var(--border);
+            border-bottom:
+                1px solid
+                var(--border);
+
+            color: var(--text-muted);
+
+            font-size: 0.76rem;
+            font-weight: 700;
+
+            letter-spacing: 0.04em;
+            text-align: left;
+            text-transform: uppercase;
+
+            white-space: nowrap;
         }}
 
         td {{
-            padding: 11px 12px;
+            padding: 12px;
 
-            border-bottom: 1px solid #172c45;
+            border-bottom:
+                1px solid
+                rgba(35, 59, 88, 0.7);
 
-            vertical-align: middle;
+            vertical-align: top;
         }}
 
         tbody tr:hover {{
-            background: var(--panel-hover);
+            background:
+                rgba(107, 167, 255, 0.055);
+        }}
+
+        tbody tr:last-child td {{
+            border-bottom: none;
         }}
 
         .appid {{
-            color: var(--muted);
-
-            font-family: monospace;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
         }}
 
         .game-name {{
-            font-weight: 600;
+            min-width: 210px;
+            font-weight: 650;
+        }}
+
+        .reason {{
+            min-width: 250px;
+            color: var(--text-muted);
+        }}
+
+        .status-pill {{
+            display: inline-block;
+
+            padding: 4px 9px;
+
+            border-radius: 999px;
+
+            font-size: 0.78rem;
+            font-weight: 750;
 
             white-space: nowrap;
         }}
 
-        .status {{
-            display: inline-block;
-
-            min-width: 76px;
-
-            text-align: center;
-
-            font-weight: 600;
-
-            border-radius: 20px;
-
-            padding: 5px 10px;
-        }}
-
         .status-native {{
-            color: #6ee7b7;
+            background:
+                rgba(56, 217, 150, 0.14);
 
-            background: rgba(52, 211, 153, 0.13);
+            color: var(--native);
         }}
 
         .status-works {{
-            color: #86efac;
+            background:
+                rgba(99, 212, 141, 0.14);
 
-            background: rgba(34, 197, 94, 0.13);
+            color: var(--works);
         }}
 
         .status-partial {{
-            color: #fde047;
+            background:
+                rgba(229, 184, 77, 0.14);
 
-            background: rgba(234, 179, 8, 0.13);
+            color: var(--partial);
         }}
 
         .status-broken {{
-            color: #fca5a5;
+            background:
+                rgba(239, 106, 115, 0.14);
 
-            background: rgba(239, 68, 68, 0.13);
+            color: var(--broken);
         }}
 
         .status-unknown {{
-            color: #cbd5e1;
+            background:
+                rgba(135, 150, 170, 0.14);
 
-            background: rgba(148, 163, 184, 0.13);
+            color: var(--unknown);
         }}
 
-        @media (max-width: 800px) {{
+        .hidden {{
+            display: none;
+        }}
+
+        .result-count {{
+            margin-top: 12px;
+
+            color: var(--text-muted);
+
+            font-size: 0.85rem;
+        }}
+
+        @media (max-width: 700px) {{
             .container {{
-                padding: 16px;
+                width: min(
+                    100% - 20px,
+                    1600px
+                );
+
+                padding-top: 24px;
             }}
 
-            h1 {{
-                font-size: 1.5rem;
+            .cards {{
+                grid-template-columns:
+                    repeat(
+                        2,
+                        minmax(0, 1fr)
+                    );
             }}
         }}
     </style>
 </head>
 
 <body>
+    <main class="container">
+        <section class="hero">
+            <h1>
+                Steam Linux Compatibility
+            </h1>
 
-<div class="container">
+            <p>
+                {total_count} Spiele geprüft ·
+                Erstellt am {html.escape(generated_at)}
+            </p>
+        </section>
 
-<header>
-    <h1>Steam Linux Compatibility</h1>
+        {degraded_banner}
 
-    <div class="subtitle">
-        Fedora Compatibility Report · {len(entries)} Steam-Spiele
-    </div>
-</header>
+        <section class="cards">
+            <article class="card">
+                <div class="card-label">
+                    Gesamt
+                </div>
 
-<div class="cards">
+                <div class="card-value">
+                    {total_count}
+                </div>
+            </article>
 
-    <div class="card">
-        <div class="card-label">
-            Gesamt
-        </div>
+            <article class="card">
+                <div class="card-label">
+                    Native
+                </div>
 
-        <div class="card-value">
-            {len(entries)}
-        </div>
-    </div>
+                <div class="card-value">
+                    {native_count}
+                </div>
+            </article>
 
-    <div class="card">
-        <div class="card-label">
-            Native
-        </div>
+            <article class="card">
+                <div class="card-label">
+                    Works
+                </div>
 
-        <div class="card-value">
-            {status_counts["Native"]}
-        </div>
-    </div>
+                <div class="card-value">
+                    {works_count}
+                </div>
+            </article>
 
-    <div class="card">
-        <div class="card-label">
-            Works
-        </div>
+            <article class="card">
+                <div class="card-label">
+                    Partial
+                </div>
 
-        <div class="card-value">
-            {status_counts["Works"]}
-        </div>
-    </div>
+                <div class="card-value">
+                    {partial_count}
+                </div>
+            </article>
 
-    <div class="card">
-        <div class="card-label">
-            Partial
-        </div>
+            <article class="card">
+                <div class="card-label">
+                    Broken
+                </div>
 
-        <div class="card-value">
-            {status_counts["Partial"]}
-        </div>
-    </div>
+                <div class="card-value">
+                    {broken_count}
+                </div>
+            </article>
 
-    <div class="card">
-        <div class="card-label">
-            Broken
-        </div>
+            <article class="card">
+                <div class="card-label">
+                    Unknown
+                </div>
 
-        <div class="card-value">
-            {status_counts["Broken"]}
-        </div>
-    </div>
+                <div class="card-value">
+                    {unknown_count}
+                </div>
+            </article>
 
-    <div class="card">
-        <div class="card-label">
-            Unknown
-        </div>
+            <article class="card">
+                <div class="card-label">
+                    Installiert
+                </div>
 
-        <div class="card-value">
-            {status_counts["Unknown"]}
-        </div>
-    </div>
+                <div class="card-value">
+                    {installed_count}
+                </div>
+            </article>
+        </section>
 
-    <div class="card">
-        <div class="card-label">
-            Installiert
-        </div>
-
-        <div class="card-value">
-            {installed_count}
-        </div>
-    </div>
-
-</div>
-
-<details class="changes-panel" open>
-
-    <summary>
-        Änderungen seit letzter Prüfung
-
-        <span class="change-count">
-            {len(changes)}
-        </span>
-    </summary>
-
-    <div class="changes-content">
-        {changes_html}
-    </div>
-
-</details>
-
-<div class="controls">
-
-    <input
-        id="search"
-        type="text"
-        placeholder="Spiel suchen..."
-        oninput="applyFilters()"
-    >
-
-    <button
-        class="status-button active"
-        onclick="setStatusFilter('all', this)"
-    >
-        Alle
-    </button>
-
-    <button
-        class="status-button"
-        onclick="setStatusFilter('Native', this)"
-    >
-        Native
-    </button>
-
-    <button
-        class="status-button"
-        onclick="setStatusFilter('Works', this)"
-    >
-        Works
-    </button>
-
-    <button
-        class="status-button"
-        onclick="setStatusFilter('Partial', this)"
-    >
-        Partial
-    </button>
-
-    <button
-        class="status-button"
-        onclick="setStatusFilter('Broken', this)"
-    >
-        Broken
-    </button>
-
-    <button
-        class="status-button"
-        onclick="setStatusFilter('Unknown', this)"
-    >
-        Unknown
-    </button>
-
-    <label class="installed-filter">
-
-        <input
-            id="installedOnly"
-            type="checkbox"
-            onchange="applyFilters()"
+        <details
+            class="changes-panel"
+            open
         >
+            <summary>
+                Änderungen seit letzter Prüfung:
+                {len(changes)}
+            </summary>
 
-        Nur installiert
+            <div class="changes-content">
+                {changes_content}
+            </div>
+        </details>
 
-    </label>
+        <section class="controls">
+            <input
+                id="search"
+                class="search"
+                type="search"
+                placeholder="Spiel, AppID, Grund, ProtonDB, Anti-Cheat …"
+                autocomplete="off"
+            >
 
-</div>
+            <div class="filters">
+                <button
+                    class="filter-button active"
+                    data-filter="All"
+                    type="button"
+                >
+                    Alle
+                </button>
 
-<div class="table-wrapper">
+                <button
+                    class="filter-button"
+                    data-filter="Native"
+                    type="button"
+                >
+                    Native
+                </button>
 
-<table id="games">
+                <button
+                    class="filter-button"
+                    data-filter="Works"
+                    type="button"
+                >
+                    Works
+                </button>
 
-<thead>
+                <button
+                    class="filter-button"
+                    data-filter="Partial"
+                    type="button"
+                >
+                    Partial
+                </button>
 
-<tr>
-    <th>AppID</th>
-    <th>Spiel</th>
-    <th>Status</th>
-    <th>Grund</th>
-    <th>Native</th>
-    <th>ProtonDB</th>
-    <th>Reports</th>
-    <th>Trending</th>
-    <th>SteamOS</th>
-    <th>Anti-Cheat</th>
-    <th>Anti-Cheat Systeme</th>
-    <th>Installiert</th>
-</tr>
+                <button
+                    class="filter-button"
+                    data-filter="Broken"
+                    type="button"
+                >
+                    Broken
+                </button>
 
-</thead>
+                <button
+                    class="filter-button"
+                    data-filter="Unknown"
+                    type="button"
+                >
+                    Unknown
+                </button>
+            </div>
 
-<tbody>
-{"".join(rows)}
-</tbody>
+            <label class="installed-filter">
+                <input
+                    id="installed-only"
+                    type="checkbox"
+                >
 
-</table>
+                Nur installiert
+            </label>
+        </section>
 
-</div>
+        <section class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>AppID</th>
+                        <th>Spiel</th>
+                        <th>Status</th>
+                        <th>Grund</th>
+                        <th>Native</th>
+                        <th>ProtonDB</th>
+                        <th>Reports</th>
+                        <th>Trending</th>
+                        <th>SteamOS</th>
+                        <th>Anti-Cheat</th>
+                        <th>Anti-Cheat Systeme</th>
+                        <th>Installiert</th>
+                    </tr>
+                </thead>
 
-</div>
+                <tbody id="game-table">
+                    {rows_html}
+                </tbody>
+            </table>
+        </section>
 
-<script>
+        <div
+            id="result-count"
+            class="result-count"
+        ></div>
+    </main>
 
-let statusFilter = "all";
+    <script>
+        const searchInput =
+            document.getElementById("search");
 
+        const installedOnly =
+            document.getElementById("installed-only");
 
-function setStatusFilter(status, button) {{
+        const filterButtons =
+            Array.from(
+                document.querySelectorAll(
+                    ".filter-button"
+                )
+            );
 
-    statusFilter = status;
+        const rows =
+            Array.from(
+                document.querySelectorAll(
+                    "#game-table tr"
+                )
+            );
 
-    document
-        .querySelectorAll(".status-button")
-        .forEach(element => {{
-            element.classList.remove("active");
-        }});
+        const resultCount =
+            document.getElementById(
+                "result-count"
+            );
 
-    button.classList.add("active");
+        let activeStatus = "All";
 
-    applyFilters();
-}}
+        function updateTable() {{
+            const searchTerm =
+                searchInput.value
+                    .trim()
+                    .toLowerCase();
 
+            const installedFilter =
+                installedOnly.checked;
 
-function applyFilters() {{
+            let visibleRows = 0;
 
-    const search = document
-        .getElementById("search")
-        .value
-        .toLowerCase();
+            for (const row of rows) {{
+                const rowText =
+                    row.textContent.toLowerCase();
 
-    const installedOnly = document
-        .getElementById("installedOnly")
-        .checked;
+                const rowStatus =
+                    row.dataset.status;
 
-    const rows = document
-        .querySelectorAll("#games tbody tr");
+                const rowInstalled =
+                    row.dataset.installed === "true";
 
-    rows.forEach(row => {{
+                const matchesSearch =
+                    !searchTerm
+                    || rowText.includes(searchTerm);
 
-        const name = row
-            .children[1]
-            .textContent
-            .toLowerCase();
+                const matchesStatus =
+                    activeStatus === "All"
+                    || rowStatus === activeStatus;
 
-        const status = row.dataset.status;
+                const matchesInstalled =
+                    !installedFilter
+                    || rowInstalled;
 
-        const installed =
-            row.dataset.installed === "true";
+                const visible =
+                    matchesSearch
+                    && matchesStatus
+                    && matchesInstalled;
 
-        const matchesSearch =
-            name.includes(search);
+                row.classList.toggle(
+                    "hidden",
+                    !visible
+                );
 
-        const matchesStatus =
-            statusFilter === "all" ||
-            status === statusFilter;
+                if (visible) {{
+                    visibleRows += 1;
+                }}
+            }}
 
-        const matchesInstalled =
-            !installedOnly ||
-            installed;
+            resultCount.textContent =
+                `${{visibleRows}} von ${{rows.length}} Spielen angezeigt`;
+        }}
 
-        row.style.display =
-            matchesSearch &&
-            matchesStatus &&
-            matchesInstalled
-                ? ""
-                : "none";
-    }});
-}}
+        searchInput.addEventListener(
+            "input",
+            updateTable
+        );
 
-</script>
+        installedOnly.addEventListener(
+            "change",
+            updateTable
+        );
 
+        for (const button of filterButtons) {{
+            button.addEventListener(
+                "click",
+                () => {{
+                    activeStatus =
+                        button.dataset.filter;
+
+                    for (
+                        const otherButton
+                        of filterButtons
+                    ) {{
+                        otherButton.classList.remove(
+                            "active"
+                        );
+                    }}
+
+                    button.classList.add(
+                        "active"
+                    );
+
+                    updateTable();
+                }}
+            );
+        }}
+
+        updateTable();
+    </script>
 </body>
 </html>
 """
 
     HTML_REPORT_FILE.write_text(
-        html_content,
+        report,
         encoding="utf-8",
     )
 

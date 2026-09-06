@@ -1,6 +1,7 @@
 import pytest
 import requests
 
+from steam_linux_check.errors import ProviderUnavailableError
 from steam_linux_check.models import SteamStoreInfo
 from steam_linux_check.providers import steam_store
 
@@ -51,7 +52,7 @@ def test_steam_store_uses_stale_cache_on_network_error(
     )
 
 
-def test_steam_store_returns_none_without_cache_on_network_error(
+def test_steam_store_raises_without_cache_on_network_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -71,6 +72,9 @@ def test_steam_store_returns_none_without_cache_on_network_error(
         raise_network_error,
     )
 
-    info = steam_store.get_app_details(620)
+    with pytest.raises(
+        ProviderUnavailableError,
+    ) as error:
+        steam_store.get_app_details(620)
 
-    assert info is None
+    assert error.value.provider == "Steam Store"

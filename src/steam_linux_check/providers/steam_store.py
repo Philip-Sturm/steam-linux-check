@@ -10,6 +10,7 @@ from ..cache import (
     load_json,
     save_json,
 )
+from ..errors import ProviderUnavailableError
 from ..models import SteamStoreInfo
 
 STEAM_APP_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
@@ -32,9 +33,27 @@ def _load_stale_cache(
     if data is None:
         return None
 
-    print("  Steam Store nicht erreichbar – alter Cache wird verwendet.")
+    print(
+        "  Steam Store nicht erreichbar "
+        "– alter Cache wird verwendet."
+    )
 
     return SteamStoreInfo(**data)
+
+
+def _raise_unavailable(
+    app_id: int,
+    message: str,
+) -> None:
+    """Raise a standardized provider availability error."""
+
+    raise ProviderUnavailableError(
+        provider="Steam Store",
+        message=(
+            f"Steam Store AppID {app_id}: "
+            f"{message}"
+        ),
+    )
 
 
 def get_app_details(app_id: int) -> SteamStoreInfo | None:
@@ -76,12 +95,10 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  Steam Store AppID {app_id}: "
-                "Netzwerkfehler und kein Cache vorhanden."
+            _raise_unavailable(
+                app_id,
+                "Netzwerkfehler und kein Cache vorhanden.",
             )
-
-            return None
 
         # -----------------------------------------------------
         # Rate Limit
@@ -138,13 +155,11 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  Steam Store AppID {app_id}: "
+            _raise_unavailable(
+                app_id,
                 f"HTTP-Fehler {response.status_code} "
-                "und kein Cache vorhanden."
+                "und kein Cache vorhanden.",
             )
-
-            return None
 
         # -----------------------------------------------------
         # JSON auswerten
@@ -162,16 +177,28 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  Steam Store AppID {app_id}: "
-                "ungültige Antwort und kein Cache vorhanden."
+            _raise_unavailable(
+                app_id,
+                "ungültige Antwort und kein Cache vorhanden.",
             )
 
-            return None
+        if not isinstance(response_data, dict):
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
+
+            if fallback is not None:
+                return fallback
+
+            _raise_unavailable(
+                app_id,
+                "unerwartetes Datenformat und kein Cache vorhanden.",
+            )
 
         result = response_data.get(cache_key)
 
-        # App existiert nicht mehr / keine Store-Daten
+        # Keine Store-Daten für diese App
         if not result or not result.get("success"):
             cache[cache_key] = {
                 "cached_at": datetime.now(UTC).isoformat(),
@@ -223,9 +250,7 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
     if fallback is not None:
         return fallback
 
-    print(
-        f"  Steam Store AppID {app_id}: "
-        "nach mehreren Versuchen keine Daten verfügbar."
+    _raise_unavailable(
+        app_id,
+        "nach mehreren Versuchen keine Daten verfügbar.",
     )
-
-    return None

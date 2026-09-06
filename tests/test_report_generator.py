@@ -130,3 +130,71 @@ def test_html_report_does_not_duplicate_status_change(
     # Ein reiner Statuswechsel darf nicht zusätzlich als
     # redundante Detailzeile dargestellt werden.
     assert "Status: Works → Broken" not in html_text
+
+def test_html_report_shows_warning_for_degraded_sources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = tmp_path / "output"
+    html_file = output_dir / "report.html"
+
+    monkeypatch.setattr(
+        report_generator,
+        "OUTPUT_DIR",
+        output_dir,
+    )
+
+    monkeypatch.setattr(
+        report_generator,
+        "HTML_REPORT_FILE",
+        html_file,
+    )
+
+    entry = GameReportEntry(
+        app_id=123,
+        name="Degraded Test Game",
+        status="Unknown",
+        reason="Insufficient compatibility data",
+        native_linux=False,
+        protondb_tier=None,
+        protondb_confidence=None,
+        protondb_reports=None,
+        protondb_trending=None,
+        steamos_status=None,
+        anticheat_status=None,
+        anticheats=[],
+        installed=False,
+    )
+
+    report_generator.write_html_report(
+        entries=[entry],
+        changes=[],
+        degraded_sources={
+            "ProtonDB",
+            "SteamOS",
+        },
+    )
+
+    assert html_file.is_file()
+
+    html_text = html_file.read_text(
+        encoding="utf-8",
+    )
+
+    assert "Unvollständiger Check" in html_text
+    assert "ProtonDB" in html_text
+    assert "SteamOS" in html_text
+
+    assert (
+        "Änderungsvergleich für diesen Lauf übersprungen."
+        in html_text
+    )
+
+    assert (
+        "der letzte"
+        in html_text
+        and "Vergleichszustand"
+        in html_text
+    )
+
+    assert "Degraded Test Game" in html_text

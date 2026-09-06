@@ -82,6 +82,27 @@ def main() -> int:
         owned_games
     )
 
+    degraded = bool(
+        provider_data.degraded_sources
+    )
+
+    if degraded:
+        print("\nWARNUNG: Der Check ist unvollständig.")
+
+        print(
+            "Nicht vollständig verfügbare Datenquellen: "
+            + ", ".join(
+                sorted(
+                    provider_data.degraded_sources
+                )
+            )
+        )
+
+        print(
+            "Der Report wird erstellt, aber nicht als neuer "
+            "Vergleichszustand gespeichert."
+        )
+
     # ---------------------------------------------------------
     # Analyse
     # ---------------------------------------------------------
@@ -124,7 +145,13 @@ def main() -> int:
 
     changes = []
 
-    if previous_report:
+    if degraded:
+        print(
+            "\nÄnderungsvergleich übersprungen, "
+            "da der Check unvollständig ist."
+        )
+
+    elif previous_report:
         changes = compare_reports(
             previous_report,
             report_entries,
@@ -175,6 +202,7 @@ def main() -> int:
     html_report_path = write_html_report(
         report_entries,
         changes=changes,
+        degraded_sources=provider_data.degraded_sources,
     )
 
     print("\nReports erstellt:")
@@ -186,10 +214,17 @@ def main() -> int:
     # Zustand speichern
     # ---------------------------------------------------------
 
-    save_current_report(
-        report_entries
-    )
+    if degraded:
+        print(
+            "\nVergleichszustand wurde nicht aktualisiert, "
+            "da der Check unvollständig war."
+        )
 
-    print("\nAktueller Zustand gespeichert.")
+    else:
+        save_current_report(
+            report_entries
+        )
+
+        print("\nAktueller Zustand gespeichert.")
 
     return 0

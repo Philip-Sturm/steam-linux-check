@@ -1,9 +1,10 @@
 Metadata-Version: 2.4
 Name: steam-linux-check
-Version: 0.1.0
+Version: 1.0.0
 Summary: Steam Linux compatibility checker
 Requires-Python: >=3.14
 Requires-Dist: requests>=2.32
 Requires-Dist: python-dotenv>=1.1
 Provides-Extra: dev
 Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: ruff>=0.16; extra == "dev"

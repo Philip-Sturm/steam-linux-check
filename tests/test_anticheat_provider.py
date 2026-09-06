@@ -1,6 +1,7 @@
 import pytest
 import requests
 
+from steam_linux_check.errors import ProviderUnavailableError
 from steam_linux_check.models import AntiCheatInfo
 from steam_linux_check.providers import anticheat
 
@@ -55,7 +56,7 @@ def test_anticheat_uses_stale_cache_on_network_error(
     ]
 
 
-def test_anticheat_returns_empty_list_without_cache_on_network_error(
+def test_anticheat_raises_without_cache_on_network_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -75,10 +76,12 @@ def test_anticheat_returns_empty_list_without_cache_on_network_error(
         raise_network_error,
     )
 
-    games = anticheat.get_anticheat_games()
+    with pytest.raises(
+        ProviderUnavailableError,
+    ) as error:
+        anticheat.get_anticheat_games()
 
-    assert games == []
-
+    assert error.value.provider == "Anti-Cheat"
 
 def test_anticheat_caches_successful_response(
     monkeypatch: pytest.MonkeyPatch,

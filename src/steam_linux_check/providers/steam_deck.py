@@ -10,6 +10,7 @@ from ..cache import (
     load_json,
     save_json,
 )
+from ..errors import ProviderUnavailableError
 from ..models import SteamDeckInfo
 
 STEAM_DECK_URL = (
@@ -59,6 +60,21 @@ def _load_stale_cache(
     return SteamDeckInfo(**data)
 
 
+def _raise_unavailable(
+    app_id: int,
+    message: str,
+) -> None:
+    """Raise a standardized provider availability error."""
+
+    raise ProviderUnavailableError(
+        provider="SteamOS",
+        message=(
+            f"Steam Deck / SteamOS AppID {app_id}: "
+            f"{message}"
+        ),
+    )
+
+
 def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
     """Fetch Steam Deck data with cache and offline fallback."""
 
@@ -67,14 +83,20 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
 
     entry = cache.get(cache_key)
 
+    # ---------------------------------------------------------
     # Frischer Cache
+    # ---------------------------------------------------------
+
     if entry and is_cache_entry_fresh(entry, CACHE_MAX_AGE):
         if entry["data"] is None:
             return None
 
         return SteamDeckInfo(**entry["data"])
 
+    # ---------------------------------------------------------
     # Netzwerkabfrage
+    # ---------------------------------------------------------
+
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.get(
@@ -92,14 +114,15 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  Steam Deck AppID {app_id}: "
-                "Netzwerkfehler und kein Cache vorhanden."
+            _raise_unavailable(
+                app_id,
+                "Netzwerkfehler und kein Cache vorhanden.",
             )
 
-            return None
-
+        # -----------------------------------------------------
         # Rate Limit
+        # -----------------------------------------------------
+
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
 
@@ -119,7 +142,10 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
             time.sleep(wait_time)
             continue
 
-        # Serverfehler
+        # -----------------------------------------------------
+        # Temporärer Serverfehler
+        # -----------------------------------------------------
+
         if 500 <= response.status_code < 600:
             wait_time = 5 * (attempt + 1)
 
@@ -132,7 +158,10 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
             time.sleep(wait_time)
             continue
 
+        # -----------------------------------------------------
         # Andere HTTP-Fehler
+        # -----------------------------------------------------
+
         try:
             response.raise_for_status()
 
@@ -145,15 +174,16 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  Steam Deck AppID {app_id}: "
+            _raise_unavailable(
+                app_id,
                 f"HTTP-Fehler {response.status_code} "
-                "und kein Cache vorhanden."
+                "und kein Cache vorhanden.",
             )
 
-            return None
-
+        # -----------------------------------------------------
         # JSON lesen
+        # -----------------------------------------------------
+
         try:
             data = response.json()
 
@@ -166,14 +196,29 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  Steam Deck AppID {app_id}: "
-                "ungültige Antwort und kein Cache vorhanden."
+            _raise_unavailable(
+                app_id,
+                "ungültige Antwort und kein Cache vorhanden.",
             )
 
-            return None
+        if not isinstance(data, dict):
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
 
+            if fallback is not None:
+                return fallback
+
+            _raise_unavailable(
+                app_id,
+                "unerwartetes Datenformat und kein Cache vorhanden.",
+            )
+
+        # -----------------------------------------------------
         # Keine verwertbaren Daten
+        # -----------------------------------------------------
+
         if not data.get("success"):
             cache[cache_key] = {
                 "cached_at": datetime.now(UTC).isoformat(),
@@ -200,7 +245,10 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
 
             return None
 
+        # -----------------------------------------------------
         # Erfolgreiche Antwort
+        # -----------------------------------------------------
+
         info = SteamDeckInfo(
             app_id=app_id,
             deck_category=results.get("resolved_category"),
@@ -220,7 +268,10 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
 
         return info
 
+    # ---------------------------------------------------------
     # Alle Versuche ausgeschöpft
+    # ---------------------------------------------------------
+
     fallback = _load_stale_cache(
         cache,
         cache_key,
@@ -229,9 +280,7 @@ def get_steam_deck_info(app_id: int) -> SteamDeckInfo | None:
     if fallback is not None:
         return fallback
 
-    print(
-        f"  Steam Deck AppID {app_id}: "
-        "nach mehreren Versuchen keine Daten verfügbar."
+    _raise_unavailable(
+        app_id,
+        "nach mehreren Versuchen keine Daten verfügbar.",
     )
-
-    return None

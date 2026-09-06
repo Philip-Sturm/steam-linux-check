@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import requests
 
 from ..cache import is_cache_entry_fresh, load_json, save_json
+from ..errors import ProviderUnavailableError
 from ..models import AntiCheatInfo
 
 ANTICHEAT_DATA_URL = (
@@ -41,6 +42,17 @@ def _load_cached_games(
         ]
     except (TypeError, ValueError):
         return None
+
+
+def _raise_unavailable(
+    message: str,
+) -> None:
+    """Raise a standardized provider availability error."""
+
+    raise ProviderUnavailableError(
+        provider="Anti-Cheat",
+        message=message,
+    )
 
 
 def _parse_games(
@@ -80,7 +92,10 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
     cache = load_json(CACHE_FILE)
     entry = cache.get(CACHE_KEY)
 
+    # ---------------------------------------------------------
     # Frischer Cache
+    # ---------------------------------------------------------
+
     if (
         isinstance(entry, dict)
         and is_cache_entry_fresh(entry, CACHE_MAX_AGE)
@@ -90,7 +105,10 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
         if cached_games is not None:
             return cached_games
 
+    # ---------------------------------------------------------
     # Netzwerkabfrage
+    # ---------------------------------------------------------
+
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.get(
@@ -108,16 +126,25 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
                 )
                 return cached_games
 
-            print(
+            _raise_unavailable(
                 "Anti-Cheat-Daten nicht erreichbar "
                 "und kein Cache vorhanden."
             )
 
-            return []
-
+        # -----------------------------------------------------
         # Rate Limit
+        # -----------------------------------------------------
+
         if response.status_code == 429:
-            wait_time = 30 * (attempt + 1)
+            retry_after = response.headers.get("Retry-After")
+
+            if retry_after is not None:
+                try:
+                    wait_time = int(retry_after)
+                except ValueError:
+                    wait_time = 30 * (attempt + 1)
+            else:
+                wait_time = 30 * (attempt + 1)
 
             print(
                 "Anti-Cheat Rate-Limit erreicht. "
@@ -127,7 +154,10 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
             time.sleep(wait_time)
             continue
 
+        # -----------------------------------------------------
         # Temporärer Serverfehler
+        # -----------------------------------------------------
+
         if 500 <= response.status_code < 600:
             wait_time = 5 * (attempt + 1)
 
@@ -140,7 +170,10 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
             time.sleep(wait_time)
             continue
 
+        # -----------------------------------------------------
         # Andere HTTP-Fehler
+        # -----------------------------------------------------
+
         try:
             response.raise_for_status()
 
@@ -154,15 +187,16 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
                 )
                 return cached_games
 
-            print(
+            _raise_unavailable(
                 f"Anti-Cheat HTTP-Fehler "
                 f"{response.status_code} "
                 "und kein Cache vorhanden."
             )
 
-            return []
-
+        # -----------------------------------------------------
         # JSON lesen
+        # -----------------------------------------------------
+
         try:
             raw_games = response.json()
 
@@ -176,22 +210,30 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
                 )
                 return cached_games
 
-            print(
+            _raise_unavailable(
                 "Ungültige Anti-Cheat-Antwort "
                 "und kein Cache vorhanden."
             )
-
-            return []
 
         if not isinstance(raw_games, list):
             cached_games = _load_cached_games(cache)
 
             if cached_games is not None:
+                print(
+                    "Unerwartetes Anti-Cheat-Datenformat "
+                    "– alter Cache wird verwendet."
+                )
                 return cached_games
 
-            return []
+            _raise_unavailable(
+                "Unerwartetes Anti-Cheat-Datenformat "
+                "und kein Cache vorhanden."
+            )
 
+        # -----------------------------------------------------
         # Erfolgreiche Antwort
+        # -----------------------------------------------------
+
         games = _parse_games(raw_games)
 
         cache[CACHE_KEY] = {
@@ -206,7 +248,10 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
 
         return games
 
+    # ---------------------------------------------------------
     # Alle Versuche ausgeschöpft
+    # ---------------------------------------------------------
+
     cached_games = _load_cached_games(cache)
 
     if cached_games is not None:
@@ -216,4 +261,7 @@ def get_anticheat_games() -> list[AntiCheatInfo]:
         )
         return cached_games
 
-    return []
+    _raise_unavailable(
+        "Anti-Cheat-Daten konnten nach mehreren Versuchen "
+        "nicht geladen werden und kein Cache ist vorhanden."
+    )

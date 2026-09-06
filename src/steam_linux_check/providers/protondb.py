@@ -10,6 +10,7 @@ from ..cache import (
     load_json,
     save_json,
 )
+from ..errors import ProviderUnavailableError
 from ..models import ProtonDBInfo
 
 PROTONDB_SUMMARY_URL = (
@@ -34,9 +35,27 @@ def _load_stale_cache(
     if data is None:
         return None
 
-    print("  ProtonDB nicht erreichbar – alter Cache wird verwendet.")
+    print(
+        "  ProtonDB nicht erreichbar "
+        "– alter Cache wird verwendet."
+    )
 
     return ProtonDBInfo(**data)
+
+
+def _raise_unavailable(
+    app_id: int,
+    message: str,
+) -> None:
+    """Raise a standardized provider availability error."""
+
+    raise ProviderUnavailableError(
+        provider="ProtonDB",
+        message=(
+            f"ProtonDB AppID {app_id}: "
+            f"{message}"
+        ),
+    )
 
 
 def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
@@ -47,14 +66,20 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
 
     entry = cache.get(cache_key)
 
+    # ---------------------------------------------------------
     # Frischer Cache
+    # ---------------------------------------------------------
+
     if entry and is_cache_entry_fresh(entry, CACHE_MAX_AGE):
         if entry["data"] is None:
             return None
 
         return ProtonDBInfo(**entry["data"])
 
+    # ---------------------------------------------------------
     # Netzwerkabfrage
+    # ---------------------------------------------------------
+
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.get(
@@ -71,14 +96,15 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  ProtonDB AppID {app_id}: "
-                "Netzwerkfehler und kein Cache vorhanden."
+            _raise_unavailable(
+                app_id,
+                "Netzwerkfehler und kein Cache vorhanden.",
             )
 
-            return None
-
+        # -----------------------------------------------------
         # Rate Limit
+        # -----------------------------------------------------
+
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
 
@@ -98,7 +124,10 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
             time.sleep(wait_time)
             continue
 
+        # -----------------------------------------------------
         # Temporärer Serverfehler
+        # -----------------------------------------------------
+
         if 500 <= response.status_code < 600:
             wait_time = 5 * (attempt + 1)
 
@@ -111,7 +140,10 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
             time.sleep(wait_time)
             continue
 
-        # Keine ProtonDB-Daten vorhanden
+        # -----------------------------------------------------
+        # Keine ProtonDB-Daten für dieses Spiel
+        # -----------------------------------------------------
+
         if response.status_code == 404:
             cache[cache_key] = {
                 "cached_at": datetime.now(UTC).isoformat(),
@@ -124,7 +156,10 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
 
             return None
 
+        # -----------------------------------------------------
         # Andere HTTP-Fehler
+        # -----------------------------------------------------
+
         try:
             response.raise_for_status()
 
@@ -137,16 +172,50 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
             if fallback is not None:
                 return fallback
 
-            print(
-                f"  ProtonDB AppID {app_id}: "
+            _raise_unavailable(
+                app_id,
                 f"HTTP-Fehler {response.status_code} "
-                "und kein Cache vorhanden."
+                "und kein Cache vorhanden.",
             )
 
-            return None
+        # -----------------------------------------------------
+        # JSON auswerten
+        # -----------------------------------------------------
 
+        try:
+            data = response.json()
+
+        except ValueError:
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
+
+            if fallback is not None:
+                return fallback
+
+            _raise_unavailable(
+                app_id,
+                "ungültige Antwort und kein Cache vorhanden.",
+            )
+
+        if not isinstance(data, dict):
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
+
+            if fallback is not None:
+                return fallback
+
+            _raise_unavailable(
+                app_id,
+                "unerwartetes Datenformat und kein Cache vorhanden.",
+            )
+
+        # -----------------------------------------------------
         # Erfolgreiche Antwort
-        data = response.json()
+        # -----------------------------------------------------
 
         info = ProtonDBInfo(
             app_id=app_id,
@@ -168,7 +237,10 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
 
         return info
 
+    # ---------------------------------------------------------
     # Alle Versuche ausgeschöpft
+    # ---------------------------------------------------------
+
     fallback = _load_stale_cache(
         cache,
         cache_key,
@@ -177,9 +249,7 @@ def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
     if fallback is not None:
         return fallback
 
-    print(
-        f"  ProtonDB AppID {app_id}: "
-        "nach mehreren Versuchen keine Daten verfügbar."
+    _raise_unavailable(
+        app_id,
+        "nach mehreren Versuchen keine Daten verfügbar.",
     )
-
-    return None

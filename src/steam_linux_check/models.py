@@ -9,10 +9,12 @@ class InstalledApp:
     name: str
     library_path: Path
 
+
 @dataclass
 class OwnedGame:
     app_id: int
     name: str
+
 
 @dataclass
 class SteamStoreInfo:
@@ -23,6 +25,7 @@ class SteamStoreInfo:
     mac: bool
     linux: bool
 
+
 @dataclass
 class ProtonDBInfo:
     app_id: int
@@ -31,6 +34,22 @@ class ProtonDBInfo:
     total_reports: int
     best_reported_tier: str | None
     trending_tier: str | None
+
+
+@dataclass
+class AntiCheatInfo:
+    app_id: int | None
+    name: str
+    status: str
+    anticheats: list[str]
+
+
+@dataclass
+class SteamDeckInfo:
+    app_id: int
+    deck_category: int | None
+    steamos_category: int | None
+
 
 class CompatibilityStatus(str, Enum):
     NATIVE = "Native"
@@ -47,46 +66,23 @@ class CompatibilityResult:
     status: CompatibilityStatus
     reason: str
 
-@dataclass
-class AntiCheatInfo:
-    name: str
-    status: str
-    anticheats: list[str]
-
-@dataclass
-class AntiCheatInfo:
-    app_id: int | None
-    name: str
-    status: str
-    anticheats: list[str]
-
-@dataclass
-class SteamDeckInfo:
-    app_id: int
-    deck_category: int | None
-    steamos_category: int | None
 
 @dataclass
 class GameReportEntry:
     app_id: int
     name: str
-
     status: str
     reason: str
-
     native_linux: bool
-
     protondb_tier: str | None
     protondb_confidence: str | None
     protondb_reports: int | None
     protondb_trending: str | None
-
     steamos_status: str | None
-
     anticheat_status: str | None
     anticheats: list[str]
-
     installed: bool
+
 
 @dataclass
 class ReportChange:

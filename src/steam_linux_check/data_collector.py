@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from .errors import ProviderUnavailableError
 from .models import (
     AntiCheatInfo,
     OwnedGame,
@@ -22,12 +23,15 @@ class CollectedCompatibilityData:
     anticheat_by_app_id: dict[int, AntiCheatInfo]
     deck_info_by_app: dict[int, SteamDeckInfo]
     native_app_ids: set[int]
+    degraded_sources: set[str]
 
 
 def collect_compatibility_data(
     owned_games: list[OwnedGame],
 ) -> CollectedCompatibilityData:
     """Collect compatibility information for all owned Steam games."""
+
+    degraded_sources: set[str] = set()
 
     # ---------------------------------------------------------
     # Steam Store
@@ -46,7 +50,20 @@ def collect_compatibility_data(
             f"{game.name}"
         )
 
-        info = get_app_details(game.app_id)
+        try:
+            info = get_app_details(game.app_id)
+
+        except ProviderUnavailableError as error:
+            degraded_sources.add(error.provider)
+
+            print()
+            print(f"Warnung: {error}")
+            print(
+        "Weitere Steam-Store-Abfragen werden "
+        "für diesen Lauf übersprungen."
+    )
+
+            break
 
         if info is not None:
             store_infos.append(info)
@@ -66,7 +83,7 @@ def collect_compatibility_data(
     print(f"Steam-Store-Daten erhalten: {len(store_infos)}")
     print(f"Native Linux-Spiele: {len(native_app_ids)}")
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------- 
     # ProtonDB
     # ---------------------------------------------------------
 
@@ -89,7 +106,22 @@ def collect_compatibility_data(
             f"{game.name}"
         )
 
-        info = get_protondb_info(game.app_id)
+        try:
+            info = get_protondb_info(game.app_id)
+
+        except ProviderUnavailableError as error:
+            degraded_sources.add(error.provider)
+
+            print()
+            print(
+                f"Warnung: {error}"
+            )
+            print(
+                "Weitere ProtonDB-Abfragen werden "
+                "für diesen Lauf übersprungen."
+            )
+
+            break
 
         if info is not None:
             proton_infos.append(info)
@@ -106,7 +138,20 @@ def collect_compatibility_data(
     # Anti-Cheat
     # ---------------------------------------------------------
 
-    anticheat_games = get_anticheat_games()
+    try:
+        anticheat_games = get_anticheat_games()
+
+    except ProviderUnavailableError as error:
+        degraded_sources.add(error.provider)
+
+        print()
+        print(f"Warnung: {error}")
+        print(
+            "Anti-Cheat-Daten stehen für diesen Lauf "
+            "nicht vollständig zur Verfügung."
+        )
+
+        anticheat_games = []
 
     anticheat_by_app_id = {
         game.app_id: game
@@ -142,7 +187,20 @@ def collect_compatibility_data(
             f"{game.name}"
         )
 
-        info = get_steam_deck_info(game.app_id)
+        try:
+            info = get_steam_deck_info(game.app_id)
+
+        except ProviderUnavailableError as error:
+            degraded_sources.add(error.provider)
+
+            print()
+            print(f"Warnung: {error}")
+            print(
+                "Weitere SteamOS-Abfragen werden "
+                "für diesen Lauf übersprungen."
+            )
+
+            break
 
         if info is not None:
             deck_infos.append(info)
@@ -165,4 +223,5 @@ def collect_compatibility_data(
         anticheat_by_app_id=anticheat_by_app_id,
         deck_info_by_app=deck_info_by_app,
         native_app_ids=native_app_ids,
+        degraded_sources=degraded_sources,
     )

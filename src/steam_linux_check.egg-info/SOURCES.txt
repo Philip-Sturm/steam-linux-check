@@ -6,6 +6,7 @@ src/steam_linux_check/cache.py
 src/steam_linux_check/cli.py
 src/steam_linux_check/compatibility.py
 src/steam_linux_check/data_collector.py
+src/steam_linux_check/errors.py
 src/steam_linux_check/models.py
 src/steam_linux_check/report_generator.py
 src/steam_linux_check/state_manager.py
