@@ -1,4 +1,5 @@
 from .models import (
+    AntiCheatInfo,
     CompatibilityResult,
     CompatibilityStatus,
     OwnedGame,
@@ -11,8 +12,17 @@ def evaluate_compatibility(
     game: OwnedGame,
     store_info: SteamStoreInfo | None,
     proton_info: ProtonDBInfo | None,
+    anticheat_info: AntiCheatInfo | None,
 ) -> CompatibilityResult:
     """Evaluate Linux compatibility from currently available providers."""
+
+    if anticheat_info is not None and anticheat_info.status in {"Broken", "Denied"}:
+        return CompatibilityResult(
+            app_id=game.app_id,
+            name=game.name,
+            status=CompatibilityStatus.BROKEN,
+            reason=f"Anti-Cheat status: {anticheat_info.status}",
+        )
 
     if store_info is not None and store_info.linux:
         return CompatibilityResult(

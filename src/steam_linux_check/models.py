@@ -46,3 +46,16 @@ class CompatibilityResult:
     name: str
     status: CompatibilityStatus
     reason: str
+
+@dataclass
+class AntiCheatInfo:
+    name: str
+    status: str
+    anticheats: list[str]
+
+@dataclass
+class AntiCheatInfo:
+    app_id: int | None
+    name: str
+    status: str
+    anticheats: list[str]
