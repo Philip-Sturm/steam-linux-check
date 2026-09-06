@@ -44,7 +44,7 @@ def find_steam_libraries(steam_path: Path) -> list[Path]:
 def find_installed_apps(libraries: list[Path]) -> list[InstalledApp]:
     """Find installed Steam games in all detected libraries."""
 
-    games: list[InstalledApp] = []
+    apps: list[InstalledApp] = []
 
     for library in libraries:
         steamapps_path = library / "steamapps"
@@ -58,7 +58,7 @@ def find_installed_apps(libraries: list[Path]) -> list[InstalledApp]:
             if app_id_match is None or name_match is None:
                 continue
 
-            games.append(
+            apps.append(
                 InstalledApp(
                     app_id=int(app_id_match.group(1)),
                     name=name_match.group(1),
@@ -66,4 +66,30 @@ def find_installed_apps(libraries: list[Path]) -> list[InstalledApp]:
                 )
             )
 
-    return games
+    return apps
+
+def find_steam_user_id(steam_path: Path) -> str | None:
+    """Find the most recently used SteamID64 from loginusers.vdf."""
+
+    loginusers_file = steam_path / "config/loginusers.vdf"
+
+    if not loginusers_file.is_file():
+        return None
+
+    content = loginusers_file.read_text(encoding="utf-8")
+
+    user_ids = re.findall(r'^\s*"(\d{17})"\s*$', content, re.MULTILINE)
+
+    if not user_ids:
+        return None
+
+    # Prefer the account marked by Steam as most recently used.
+    blocks = re.split(r'(?=^\s*"\d{17}"\s*$)', content, flags=re.MULTILINE)
+
+    for block in blocks:
+        id_match = re.match(r'^\s*"(\d{17})"', block)
+
+        if id_match and re.search(r'"MostRecent"\s+"1"', block):
+            return id_match.group(1)
+
+    return user_ids[0]

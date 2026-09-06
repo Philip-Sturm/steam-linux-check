@@ -6,4 +6,5 @@ src/steam_linux_check/steam_detector.py
 src/steam_linux_check.egg-info/PKG-INFO
 src/steam_linux_check.egg-info/SOURCES.txt
 src/steam_linux_check.egg-info/dependency_links.txt
+src/steam_linux_check.egg-info/requires.txt
 src/steam_linux_check.egg-info/top_level.txt

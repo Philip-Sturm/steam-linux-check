@@ -3,3 +3,5 @@ Name: steam-linux-check
 Version: 0.1.0
 Summary: Steam Linux compatibility checker
 Requires-Python: >=3.14
+Requires-Dist: requests>=2.32
+Requires-Dist: python-dotenv>=1.1
