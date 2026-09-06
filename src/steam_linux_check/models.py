@@ -59,3 +59,9 @@ class AntiCheatInfo:
     name: str
     status: str
     anticheats: list[str]
+
+@dataclass
+class SteamDeckInfo:
+    app_id: int
+    deck_category: int | None
+    steamos_category: int | None

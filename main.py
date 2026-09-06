@@ -4,6 +4,10 @@ from steam_linux_check.compatibility import evaluate_compatibility
 from steam_linux_check.providers.anticheat import get_anticheat_games
 from steam_linux_check.providers.protondb import get_protondb_info
 from steam_linux_check.providers.steam import get_owned_games
+from steam_linux_check.providers.steam_deck import (
+    category_name,
+    get_steam_deck_info,
+)
 from steam_linux_check.providers.steam_store import get_app_details
 from steam_linux_check.steam_detector import (
     find_installed_apps,
@@ -197,6 +201,21 @@ def main() -> None:
 
     for app in sorted(apps, key=lambda app: app.name.lower()):
         print(f"  {app.app_id:<10} {app.name}")
+
+    print("\nSteam Deck Tests:")
+
+    for app_id in [620, 2406770, 359550]:
+        info = get_steam_deck_info(app_id)
+
+        if info is None:
+            print(f"{app_id}: keine Steam-Deck-Daten")
+            continue
+
+        print(
+            f"{app_id:<10} "
+            f"Deck={category_name(info.deck_category):<12} "
+            f"SteamOS={category_name(info.steamos_category)}"
+        )
 
 
 if __name__ == "__main__":
