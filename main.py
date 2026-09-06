@@ -9,6 +9,7 @@ from steam_linux_check.providers.steam_store import get_app_details
 
 
 def main() -> None:
+    # Lokale Steam-Installation finden
     steam_path = find_steam_installation()
 
     if steam_path is None:
@@ -17,21 +18,48 @@ def main() -> None:
 
     print(f"Steam gefunden: {steam_path}")
 
+    # SteamID64 ermitteln
     steam_id = find_steam_user_id(steam_path)
 
     if steam_id is None:
         print("SteamID64 wurde nicht gefunden.")
-    else:
-        print(f"SteamID64: {steam_id}")
+        return
 
-    if steam_id is not None:
-        owned_games = get_owned_games(steam_id)
+    print(f"SteamID64: {steam_id}")
 
-        print(f"\nBesessene Steam-Spiele: {len(owned_games)}")
+    # Gesamte Besitzbibliothek über Steam Web API abrufen
+    owned_games = get_owned_games(steam_id)
 
-        for game in sorted(owned_games, key=lambda game: game.name.lower()):
-            print(f"  {game.app_id:<10} {game.name}")
+    print(f"\nBesessene Steam-Spiele: {len(owned_games)}")
 
+    # Steam-Store-Metadaten abrufen bzw. aus Cache laden
+    print(f"\nSteam-Store-Daten werden geprüft: {len(owned_games)} Spiele")
+
+    store_infos = []
+
+    for index, game in enumerate(owned_games, start=1):
+        print(
+            f"[{index:>3}/{len(owned_games)}] "
+            f"{game.name}"
+        )
+
+        details = get_app_details(game.app_id)
+
+        if details is not None:
+            store_infos.append(details)
+
+    # Native Linux-Spiele bestimmen
+    native_games = [
+        game
+        for game in store_infos
+        if game.app_type == "game" and game.linux
+    ]
+
+    print()
+    print(f"Steam-Store-Daten erhalten: {len(store_infos)}")
+    print(f"Native Linux-Spiele: {len(native_games)}")
+
+    # Lokale Steam-Bibliotheken erkennen
     libraries = find_steam_libraries(steam_path)
 
     print("\nSteam-Bibliotheken:")
@@ -39,28 +67,13 @@ def main() -> None:
     for library in libraries:
         print(f"  - {library}")
 
+    # Lokal installierte Steam-Apps erkennen
     apps = find_installed_apps(libraries)
 
     print(f"\nInstallierte Steam-Apps: {len(apps)}")
 
     for app in sorted(apps, key=lambda app: app.name.lower()):
         print(f"  {app.app_id:<10} {app.name}")
-
-    print("\nSteam Store Tests:")
-
-    for app_id in [620, 2406770, 1867240]:
-        details = get_app_details(app_id)
-
-        if details is None:
-            print(f"{app_id}: keine Daten")
-            continue
-
-        print(
-            f"{details.app_id:<10} "
-            f"{details.name:<25} "
-            f"Type={details.app_type:<8} "
-            f"Linux={details.linux}"
-        )
 
 
 if __name__ == "__main__":
