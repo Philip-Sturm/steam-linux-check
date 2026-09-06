@@ -7,7 +7,6 @@ import requests
 from ..cache import is_cache_entry_fresh, load_json, save_json
 from ..models import ProtonDBInfo
 
-
 PROTONDB_SUMMARY_URL = (
     "https://www.protondb.com/api/v1/reports/summaries/{app_id}.json"
 )
