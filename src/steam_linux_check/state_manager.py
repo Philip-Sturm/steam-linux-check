@@ -55,10 +55,10 @@ def compare_reports(
 
         details: list[str] = []
 
-        if old.get("status") != entry.status:
-            details.append(
-                f"Status: {old.get('status')} → {entry.status}"
-            )
+        old_status = old.get("status")
+        new_status = entry.status
+
+        status_changed = old_status != new_status
 
         if old.get("protondb_tier") != entry.protondb_tier:
             details.append(
@@ -95,14 +95,14 @@ def compare_reports(
                 f"{entry.installed}"
             )
 
-        if details:
+        if status_changed or details:
             changes.append(
                 ReportChange(
                     app_id=app_id,
                     name=entry.name,
                     change_type="changed",
-                    old_status=old.get("status"),
-                    new_status=entry.status,
+                    old_status=old_status,
+                    new_status=new_status,
                     details=details,
                 )
             )

@@ -63,7 +63,14 @@ def main() -> None:
     # Besitzbibliothek
     # ---------------------------------------------------------
 
-    owned_games = get_owned_games(steam_id)
+    try:
+        owned_games = get_owned_games(steam_id)
+
+    except RuntimeError as error:
+        print("\nSteam-Bibliothek konnte nicht geladen werden.")
+        print(f"Grund: {error}")
+        print("Der Check wird abgebrochen.")
+        return
 
     print(f"Besessene Steam-Spiele: {len(owned_games)}")
 

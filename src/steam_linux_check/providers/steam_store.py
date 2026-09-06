@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 import requests
 
-from ..cache import is_cache_entry_fresh, load_json, save_json
+from ..cache import (
+    get_cached_data,
+    is_cache_entry_fresh,
+    load_json,
+    save_json,
+)
 from ..models import SteamStoreInfo
 
 STEAM_APP_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
@@ -16,13 +21,33 @@ REQUEST_DELAY = 1.0
 MAX_RETRIES = 4
 
 
+def _load_stale_cache(
+    cache: dict,
+    cache_key: str,
+) -> SteamStoreInfo | None:
+    """Use an expired Steam Store cache entry as fallback."""
+
+    data = get_cached_data(cache, cache_key)
+
+    if data is None:
+        return None
+
+    print("  Steam Store nicht erreichbar – alter Cache wird verwendet.")
+
+    return SteamStoreInfo(**data)
+
+
 def get_app_details(app_id: int) -> SteamStoreInfo | None:
-    """Fetch Steam Store metadata for one app."""
+    """Fetch Steam Store metadata with cache and offline fallback."""
 
     cache = load_json(CACHE_FILE)
     cache_key = str(app_id)
 
     entry = cache.get(cache_key)
+
+    # ---------------------------------------------------------
+    # Frischer Cache
+    # ---------------------------------------------------------
 
     if entry and is_cache_entry_fresh(entry, CACHE_MAX_AGE):
         if entry["data"] is None:
@@ -30,33 +55,123 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
 
         return SteamStoreInfo(**entry["data"])
 
+    # ---------------------------------------------------------
+    # Netzwerkabfrage
+    # ---------------------------------------------------------
+
     for attempt in range(MAX_RETRIES):
-        response = requests.get(
-            STEAM_APP_DETAILS_URL,
-            params={"appids": app_id},
-            timeout=15,
-        )
+        try:
+            response = requests.get(
+                STEAM_APP_DETAILS_URL,
+                params={"appids": app_id},
+                timeout=15,
+            )
+
+        except requests.RequestException:
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
+
+            if fallback is not None:
+                return fallback
+
+            print(
+                f"  Steam Store AppID {app_id}: "
+                "Netzwerkfehler und kein Cache vorhanden."
+            )
+
+            return None
+
+        # -----------------------------------------------------
+        # Rate Limit
+        # -----------------------------------------------------
 
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
 
             if retry_after is not None:
-                wait_time = int(retry_after)
+                try:
+                    wait_time = int(retry_after)
+                except ValueError:
+                    wait_time = 30 * (attempt + 1)
             else:
                 wait_time = 30 * (attempt + 1)
 
             print(
-                f"  Steam Rate-Limit erreicht. "
+                "  Steam Store Rate-Limit erreicht. "
                 f"Warte {wait_time} Sekunden..."
             )
 
             time.sleep(wait_time)
             continue
 
-        response.raise_for_status()
+        # -----------------------------------------------------
+        # Temporärer Serverfehler
+        # -----------------------------------------------------
 
-        result = response.json().get(cache_key)
+        if 500 <= response.status_code < 600:
+            wait_time = 5 * (attempt + 1)
 
+            print(
+                f"  Steam Store Serverfehler "
+                f"{response.status_code}. "
+                f"Neuer Versuch in {wait_time} Sekunden..."
+            )
+
+            time.sleep(wait_time)
+            continue
+
+        # -----------------------------------------------------
+        # Andere HTTP-Fehler
+        # -----------------------------------------------------
+
+        try:
+            response.raise_for_status()
+
+        except requests.HTTPError:
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
+
+            if fallback is not None:
+                return fallback
+
+            print(
+                f"  Steam Store AppID {app_id}: "
+                f"HTTP-Fehler {response.status_code} "
+                "und kein Cache vorhanden."
+            )
+
+            return None
+
+        # -----------------------------------------------------
+        # JSON auswerten
+        # -----------------------------------------------------
+
+        try:
+            response_data = response.json()
+
+        except ValueError:
+            fallback = _load_stale_cache(
+                cache,
+                cache_key,
+            )
+
+            if fallback is not None:
+                return fallback
+
+            print(
+                f"  Steam Store AppID {app_id}: "
+                "ungültige Antwort und kein Cache vorhanden."
+            )
+
+            return None
+
+        result = response_data.get(cache_key)
+
+        # App existiert nicht mehr / keine Store-Daten
         if not result or not result.get("success"):
             cache[cache_key] = {
                 "cached_at": datetime.now(UTC).isoformat(),
@@ -69,7 +184,11 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
 
             return None
 
-        data = result["data"]
+        # -----------------------------------------------------
+        # Erfolgreiche Antwort
+        # -----------------------------------------------------
+
+        data = result.get("data", {})
         platforms = data.get("platforms", {})
 
         info = SteamStoreInfo(
@@ -92,5 +211,21 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
 
         return info
 
-    print(f"  AppID {app_id}: nach mehreren Versuchen übersprungen.")
+    # ---------------------------------------------------------
+    # Alle Versuche ausgeschöpft
+    # ---------------------------------------------------------
+
+    fallback = _load_stale_cache(
+        cache,
+        cache_key,
+    )
+
+    if fallback is not None:
+        return fallback
+
+    print(
+        f"  Steam Store AppID {app_id}: "
+        "nach mehreren Versuchen keine Daten verfügbar."
+    )
+
     return None

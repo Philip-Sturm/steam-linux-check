@@ -39,3 +39,21 @@ def is_cache_entry_fresh(entry: dict, max_age: timedelta) -> bool:
         return False
 
     return datetime.now(UTC) - timestamp < max_age
+
+def get_cached_data(
+    cache: dict,
+    key: str,
+) -> dict | None:
+    """Return cached data regardless of its age."""
+
+    entry = cache.get(key)
+
+    if not isinstance(entry, dict):
+        return None
+
+    data = entry.get("data")
+
+    if not isinstance(data, dict):
+        return None
+
+    return data
