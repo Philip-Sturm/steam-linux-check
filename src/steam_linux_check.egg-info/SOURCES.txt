@@ -3,6 +3,7 @@ pyproject.toml
 src/steam_linux_check/__init__.py
 src/steam_linux_check/analyzer.py
 src/steam_linux_check/cache.py
+src/steam_linux_check/cli.py
 src/steam_linux_check/compatibility.py
 src/steam_linux_check/data_collector.py
 src/steam_linux_check/models.py
@@ -12,6 +13,7 @@ src/steam_linux_check/steam_detector.py
 src/steam_linux_check.egg-info/PKG-INFO
 src/steam_linux_check.egg-info/SOURCES.txt
 src/steam_linux_check.egg-info/dependency_links.txt
+src/steam_linux_check.egg-info/entry_points.txt
 src/steam_linux_check.egg-info/requires.txt
 src/steam_linux_check.egg-info/top_level.txt
 src/steam_linux_check/providers/__init__.py
@@ -20,3 +22,12 @@ src/steam_linux_check/providers/protondb.py
 src/steam_linux_check/providers/steam.py
 src/steam_linux_check/providers/steam_deck.py
 src/steam_linux_check/providers/steam_store.py
+tests/test_anticheat_provider.py
+tests/test_compatibility.py
+tests/test_main.py
+tests/test_protondb_provider.py
+tests/test_report_generator.py
+tests/test_state_manager.py
+tests/test_steam_deck_provider.py
+tests/test_steam_provider.py
+tests/test_steam_store_provider.py

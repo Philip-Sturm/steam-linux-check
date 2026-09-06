@@ -12,6 +12,9 @@ dependencies = [
     "python-dotenv>=1.1",
 ]
 
+[project.scripts]
+steam-linux-check = "steam_linux_check.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import main as app_main
+from steam_linux_check import cli as app_main
 
 
 def test_main_returns_1_when_steam_is_not_found(

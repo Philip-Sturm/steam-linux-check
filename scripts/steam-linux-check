@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 
-PROJECT_DIR="$HOME/Projekte/steam-linux-check"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
 REPORT_FILE="$PROJECT_DIR/output/report.html"
+APP="$PROJECT_DIR/.venv/bin/steam-linux-check"
 
 cd "$PROJECT_DIR" || exit 1
 
-"$PROJECT_DIR/.venv/bin/python" main.py
+if [ ! -x "$APP" ]; then
+    echo "steam-linux-check wurde in der virtuellen Umgebung nicht gefunden."
+    echo "Erwarteter Pfad: $APP"
+    exit 1
+fi
+
+"$APP"
 exit_code=$?
 
 if [ "$exit_code" -eq 0 ] && [ -f "$REPORT_FILE" ]; then
