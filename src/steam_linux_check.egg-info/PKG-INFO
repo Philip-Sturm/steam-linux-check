@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: steam-linux-check
+Version: 0.1.0
+Summary: Steam Linux compatibility checker
+Requires-Python: >=3.14
