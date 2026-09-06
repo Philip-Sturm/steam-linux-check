@@ -4,6 +4,7 @@ from src.steam_linux_check.steam_detector import (
     find_steam_libraries,
     find_steam_user_id,
 )
+from steam_linux_check.providers.protondb import get_protondb_info
 from steam_linux_check.providers.steam import get_owned_games
 from steam_linux_check.providers.steam_store import get_app_details
 
@@ -55,9 +56,31 @@ def main() -> None:
         if game.app_type == "game" and game.linux
     ]
 
+    native_app_ids = {
+        game.app_id
+        for game in native_games
+    }
+
     print()
     print(f"Steam-Store-Daten erhalten: {len(store_infos)}")
     print(f"Native Linux-Spiele: {len(native_games)}")
+
+    store_app_ids = {info.app_id for info in store_infos}
+
+    missing_store_games = [
+        game
+        for game in owned_games
+        if game.app_id not in store_app_ids
+    ]
+
+    if missing_store_games:
+        print(f"\nKeine Steam-Store-Daten: {len(missing_store_games)}")
+
+        for game in sorted(
+            missing_store_games,
+            key=lambda game: game.name.lower(),
+        ):
+            print(f"  {game.app_id:<10} {game.name}")
 
     # Lokale Steam-Bibliotheken erkennen
     libraries = find_steam_libraries(steam_path)
@@ -74,6 +97,31 @@ def main() -> None:
 
     for app in sorted(apps, key=lambda app: app.name.lower()):
         print(f"  {app.app_id:<10} {app.name}")
+
+    print("\nProtonDB-Daten werden geprüft...")
+
+    proton_infos = []
+
+    proton_targets = [
+        game
+        for game in owned_games
+        if game.app_id not in native_app_ids
+    ]
+
+    for index, game in enumerate(proton_targets, start=1):
+        print(
+            f"[{index:>3}/{len(proton_targets)}] "
+            f"{game.name}"
+        )
+
+        info = get_protondb_info(game.app_id)
+
+        if info is not None:
+            proton_infos.append(info)
+
+    print()
+    print(f"ProtonDB-relevante Spiele: {len(proton_targets)}")
+    print(f"ProtonDB-Daten erhalten: {len(proton_infos)}")
 
 
 if __name__ == "__main__":

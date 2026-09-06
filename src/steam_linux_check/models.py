@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 
@@ -21,3 +22,27 @@ class SteamStoreInfo:
     windows: bool
     mac: bool
     linux: bool
+
+@dataclass
+class ProtonDBInfo:
+    app_id: int
+    tier: str | None
+    confidence: str | None
+    total_reports: int
+    best_reported_tier: str | None
+    trending_tier: str | None
+
+class CompatibilityStatus(str, Enum):
+    NATIVE = "Native"
+    WORKS = "Works"
+    PARTIAL = "Partial"
+    BROKEN = "Broken"
+    UNKNOWN = "Unknown"
+
+
+@dataclass
+class CompatibilityResult:
+    app_id: int
+    name: str
+    status: CompatibilityStatus
+    reason: str

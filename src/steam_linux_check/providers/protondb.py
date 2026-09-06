@@ -5,19 +5,22 @@ from datetime import UTC, datetime, timedelta
 import requests
 
 from ..cache import is_cache_entry_fresh, load_json, save_json
-from ..models import SteamStoreInfo
+from ..models import ProtonDBInfo
 
-STEAM_APP_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
 
-CACHE_FILE = "steam_store.json"
+PROTONDB_SUMMARY_URL = (
+    "https://www.protondb.com/api/v1/reports/summaries/{app_id}.json"
+)
+
+CACHE_FILE = "protondb.json"
 CACHE_MAX_AGE = timedelta(days=7)
 
 REQUEST_DELAY = 1.0
 MAX_RETRIES = 4
 
 
-def get_app_details(app_id: int) -> SteamStoreInfo | None:
-    """Fetch Steam Store metadata for one app."""
+def get_protondb_info(app_id: int) -> ProtonDBInfo | None:
+    """Fetch ProtonDB summary information for one Steam app."""
 
     cache = load_json(CACHE_FILE)
     cache_key = str(app_id)
@@ -28,36 +31,26 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
         if entry["data"] is None:
             return None
 
-        return SteamStoreInfo(**entry["data"])
+        return ProtonDBInfo(**entry["data"])
 
     for attempt in range(MAX_RETRIES):
         response = requests.get(
-            STEAM_APP_DETAILS_URL,
-            params={"appids": app_id},
+            PROTONDB_SUMMARY_URL.format(app_id=app_id),
             timeout=15,
         )
 
         if response.status_code == 429:
-            retry_after = response.headers.get("Retry-After")
-
-            if retry_after is not None:
-                wait_time = int(retry_after)
-            else:
-                wait_time = 30 * (attempt + 1)
+            wait_time = 30 * (attempt + 1)
 
             print(
-                f"  Steam Rate-Limit erreicht. "
+                f"  ProtonDB Rate-Limit erreicht. "
                 f"Warte {wait_time} Sekunden..."
             )
 
             time.sleep(wait_time)
             continue
 
-        response.raise_for_status()
-
-        result = response.json().get(cache_key)
-
-        if not result or not result.get("success"):
+        if response.status_code == 404:
             cache[cache_key] = {
                 "cached_at": datetime.now(UTC).isoformat(),
                 "data": None,
@@ -66,19 +59,19 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
             save_json(CACHE_FILE, cache)
 
             time.sleep(REQUEST_DELAY)
-
             return None
 
-        data = result["data"]
-        platforms = data.get("platforms", {})
+        response.raise_for_status()
 
-        info = SteamStoreInfo(
+        data = response.json()
+
+        info = ProtonDBInfo(
             app_id=app_id,
-            name=data.get("name", "Unknown"),
-            app_type=data.get("type", "unknown"),
-            windows=platforms.get("windows", False),
-            mac=platforms.get("mac", False),
-            linux=platforms.get("linux", False),
+            tier=data.get("tier"),
+            confidence=data.get("confidence"),
+            total_reports=data.get("total", 0),
+            best_reported_tier=data.get("bestReportedTier"),
+            trending_tier=data.get("trendingTier"),
         )
 
         cache[cache_key] = {
@@ -92,5 +85,5 @@ def get_app_details(app_id: int) -> SteamStoreInfo | None:
 
         return info
 
-    print(f"  AppID {app_id}: nach mehreren Versuchen übersprungen.")
+    print(f"  ProtonDB AppID {app_id}: nach mehreren Versuchen übersprungen.")
     return None
