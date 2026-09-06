@@ -65,3 +65,25 @@ class SteamDeckInfo:
     app_id: int
     deck_category: int | None
     steamos_category: int | None
+
+@dataclass
+class GameReportEntry:
+    app_id: int
+    name: str
+
+    status: str
+    reason: str
+
+    native_linux: bool
+
+    protondb_tier: str | None
+    protondb_confidence: str | None
+    protondb_reports: int | None
+    protondb_trending: str | None
+
+    steamos_status: str | None
+
+    anticheat_status: str | None
+    anticheats: list[str]
+
+    installed: bool

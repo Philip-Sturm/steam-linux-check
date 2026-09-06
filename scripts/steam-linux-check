@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+PROJECT_DIR="$HOME/Projekte/steam-linux-check"
+REPORT_FILE="$PROJECT_DIR/output/report.html"
+
+cd "$PROJECT_DIR" || exit 1
+
+"$PROJECT_DIR/.venv/bin/python" main.py
+exit_code=$?
+
+if [ "$exit_code" -eq 0 ] && [ -f "$REPORT_FILE" ]; then
+    nohup xdg-open "$REPORT_FILE" >/dev/null 2>&1 < /dev/null &
+fi
+
+exit "$exit_code"
