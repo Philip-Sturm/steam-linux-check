@@ -1,19 +1,20 @@
 from collections import Counter
 
-from steam_linux_check.compatibility import evaluate_compatibility
-from steam_linux_check.models import GameReportEntry
+from steam_linux_check.analyzer import build_report_entries
 from steam_linux_check.providers.anticheat import get_anticheat_games
 from steam_linux_check.providers.protondb import get_protondb_info
 from steam_linux_check.providers.steam import get_owned_games
-from steam_linux_check.providers.steam_deck import (
-    category_name,
-    get_steam_deck_info,
-)
+from steam_linux_check.providers.steam_deck import get_steam_deck_info
 from steam_linux_check.providers.steam_store import get_app_details
 from steam_linux_check.report_generator import (
     write_csv_report,
     write_html_report,
     write_json_report,
+)
+from steam_linux_check.state_manager import (
+    compare_reports,
+    load_previous_report,
+    save_current_report,
 )
 from steam_linux_check.steam_detector import (
     find_installed_apps,
@@ -25,7 +26,7 @@ from steam_linux_check.steam_detector import (
 
 def main() -> None:
     # ---------------------------------------------------------
-    # Lokale Steam-Installation
+    # Steam lokal erkennen
     # ---------------------------------------------------------
 
     steam_path = find_steam_installation()
@@ -44,8 +45,10 @@ def main() -> None:
 
     print(f"SteamID64: {steam_id}")
 
+    previous_report = load_previous_report()
+
     # ---------------------------------------------------------
-    # Lokale Steam-Bibliotheken und installierte Apps
+    # Lokale Bibliotheken
     # ---------------------------------------------------------
 
     libraries = find_steam_libraries(steam_path)
@@ -194,77 +197,17 @@ def main() -> None:
     print(f"Steam-Deck-Daten erhalten: {len(deck_infos)}")
 
     # ---------------------------------------------------------
-    # Compatibility Engine + Report-Einträge
+    # Analyse
     # ---------------------------------------------------------
 
-    compatibility_results = []
-    report_entries = []
-
-    for game in owned_games:
-        store_info = store_info_by_app.get(game.app_id)
-        proton_info = proton_info_by_app.get(game.app_id)
-        anticheat_info = anticheat_by_app_id.get(game.app_id)
-        deck_info = deck_info_by_app.get(game.app_id)
-
-        result = evaluate_compatibility(
-            game=game,
-            store_info=store_info,
-            proton_info=proton_info,
-            anticheat_info=anticheat_info,
-            deck_info=deck_info,
-        )
-
-        compatibility_results.append(result)
-
-        report_entries.append(
-            GameReportEntry(
-                app_id=game.app_id,
-                name=game.name,
-                status=result.status.value,
-                reason=result.reason,
-                native_linux=(
-                    store_info.linux
-                    if store_info is not None
-                    else False
-                ),
-                protondb_tier=(
-                    proton_info.tier
-                    if proton_info is not None
-                    else None
-                ),
-                protondb_confidence=(
-                    proton_info.confidence
-                    if proton_info is not None
-                    else None
-                ),
-                protondb_reports=(
-                    proton_info.total_reports
-                    if proton_info is not None
-                    else None
-                ),
-                protondb_trending=(
-                    proton_info.trending_tier
-                    if proton_info is not None
-                    else None
-                ),
-                steamos_status=(
-                    category_name(deck_info.steamos_category)
-                    if deck_info is not None
-                    else None
-                ),
-                anticheat_status=(
-                    anticheat_info.status
-                    if anticheat_info is not None
-                    else None
-                ),
-                anticheats=(
-                    list(anticheat_info.anticheats)
-                    if anticheat_info is not None
-                    else []
-                ),
-                installed=game.app_id in installed_app_ids,
-            )
-        )
+    compatibility_results, report_entries = build_report_entries(
+        owned_games=owned_games,
+        store_info_by_app=store_info_by_app,
+        proton_info_by_app=proton_info_by_app,
+        anticheat_by_app_id=anticheat_by_app_id,
+        deck_info_by_app=deck_info_by_app,
+        installed_app_ids=installed_app_ids,
+    )
 
     # ---------------------------------------------------------
     # Zusammenfassung
@@ -290,27 +233,46 @@ def main() -> None:
         )
 
     # ---------------------------------------------------------
-    # Bekannte Testfälle
+    # Änderungen seit letztem Lauf
     # ---------------------------------------------------------
 
-    print("\nTestfälle:")
+    changes = []
 
-    test_app_ids = {
-        620,       # Portal 2
-        2406770,   # Bodycam
-        1867240,   # WARDOGS
-        976730,    # Halo MCC
-        578080,    # PUBG
-        359550,    # Rainbow Six Siege
-    }
+    if previous_report:
+        changes = compare_reports(
+            previous_report,
+            report_entries,
+        )
 
-    for result in compatibility_results:
-        if result.app_id in test_app_ids:
-            print(
-                f"  {result.name:<35} "
-                f"{result.status.value:<8} "
-                f"{result.reason}"
-            )
+        print(
+            f"\nÄnderungen seit letzter Prüfung: "
+            f"{len(changes)}"
+        )
+
+        if not changes:
+            print("  Keine Änderungen.")
+
+        for change in changes:
+            print(f"\n  {change.name}")
+
+            if (
+                change.old_status is not None
+                and change.new_status is not None
+                and change.old_status != change.new_status
+            ):
+                print(
+                    f"    {change.old_status} "
+                    f"→ {change.new_status}"
+                )
+
+            for detail in change.details:
+                print(f"    {detail}")
+
+    else:
+        print(
+            "\nKein vorheriger Zustand vorhanden. "
+            "Baseline wird erstellt."
+        )
 
     # ---------------------------------------------------------
     # Reports
@@ -318,12 +280,24 @@ def main() -> None:
 
     json_report_path = write_json_report(report_entries)
     csv_report_path = write_csv_report(report_entries)
-    html_report_path = write_html_report(report_entries)
+
+    html_report_path = write_html_report(
+        report_entries,
+        changes=changes,
+    )
 
     print("\nReports erstellt:")
     print(f"  JSON: {json_report_path}")
     print(f"  CSV:  {csv_report_path}")
     print(f"  HTML: {html_report_path}")
+
+    # ---------------------------------------------------------
+    # Zustand speichern
+    # ---------------------------------------------------------
+
+    save_current_report(report_entries)
+
+    print("\nAktueller Zustand gespeichert.")
 
 
 if __name__ == "__main__":

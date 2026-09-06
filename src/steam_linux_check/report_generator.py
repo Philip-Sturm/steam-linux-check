@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .models import GameReportEntry
+from .models import GameReportEntry, ReportChange
 
 OUTPUT_DIR = Path("output")
 
@@ -85,7 +85,10 @@ def write_csv_report(entries: list[GameReportEntry]) -> Path:
     return CSV_REPORT_FILE
 
 
-def write_html_report(entries: list[GameReportEntry]) -> Path:
+def write_html_report(
+    entries: list[GameReportEntry],
+    changes: list[ReportChange] | None = None,
+) -> Path:
     """Write the compatibility report as a modern HTML dashboard."""
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,6 +107,64 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
     installed_count = sum(
         1 for entry in entries if entry.installed
     )
+
+    # ---------------------------------------------------------
+    # Änderungen seit letzter Prüfung
+    # ---------------------------------------------------------
+
+    changes = changes or []
+
+    if changes:
+        change_items = []
+
+        for change in changes:
+            details = "".join(
+                f"<li>{html.escape(detail)}</li>"
+                for detail in change.details
+            )
+
+            status_change = ""
+
+            if (
+                change.old_status is not None
+                and change.new_status is not None
+                and change.old_status != change.new_status
+            ):
+                status_change = (
+                    '<div class="change-status">'
+                    f"{html.escape(change.old_status)} "
+                    f"→ {html.escape(change.new_status)}"
+                    "</div>"
+                )
+
+            change_items.append(
+                f"""
+                <div class="change-item">
+                    <div class="change-name">
+                        {html.escape(change.name)}
+                    </div>
+
+                    {status_change}
+
+                    <ul>
+                        {details}
+                    </ul>
+                </div>
+                """
+            )
+
+        changes_html = "".join(change_items)
+
+    else:
+        changes_html = """
+        <div class="no-changes">
+            Keine Änderungen seit der letzten Prüfung.
+        </div>
+        """
+
+    # ---------------------------------------------------------
+    # Tabellenzeilen
+    # ---------------------------------------------------------
 
     rows = []
 
@@ -128,7 +189,9 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
                     </span>
                 </td>
 
-                <td>{html.escape(entry.reason)}</td>
+                <td>
+                    {html.escape(entry.reason)}
+                </td>
 
                 <td>
                     {"✓" if entry.native_linux else ""}
@@ -165,11 +228,16 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
             """
         )
 
+    # ---------------------------------------------------------
+    # HTML
+    # ---------------------------------------------------------
+
     html_content = f"""<!DOCTYPE html>
 <html lang="de">
 
 <head>
     <meta charset="UTF-8">
+
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0"
@@ -206,6 +274,7 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         body {{
             margin: 0;
+
             background:
                 radial-gradient(
                     circle at top,
@@ -214,6 +283,7 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
                 );
 
             color: var(--text);
+
             font-family:
                 Inter,
                 system-ui,
@@ -246,16 +316,20 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         .cards {{
             display: grid;
+
             grid-template-columns:
                 repeat(auto-fit, minmax(150px, 1fr));
+
             gap: 14px;
             margin-bottom: 24px;
         }}
 
         .card {{
             background: rgba(16, 31, 51, 0.92);
+
             border: 1px solid var(--border);
             border-radius: 14px;
+
             padding: 18px;
         }}
 
@@ -266,36 +340,112 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         .card-value {{
             margin-top: 5px;
+
             font-size: 1.8rem;
             font-weight: 700;
+        }}
+
+        .changes-panel {{
+            margin-bottom: 18px;
+
+            background: var(--panel);
+
+            border: 1px solid var(--border);
+            border-radius: 14px;
+
+            overflow: hidden;
+        }}
+
+        .changes-panel summary {{
+            cursor: pointer;
+
+            padding: 16px 18px;
+
+            font-weight: 600;
+
+            user-select: none;
+        }}
+
+        .changes-panel summary:hover {{
+            background: var(--panel-hover);
+        }}
+
+        .change-count {{
+            margin-left: 8px;
+
+            color: var(--blue-light);
+
+            font-weight: 700;
+        }}
+
+        .changes-content {{
+            padding: 0 18px 16px;
+        }}
+
+        .change-item {{
+            padding: 12px 0;
+
+            border-top: 1px solid var(--border);
+        }}
+
+        .change-name {{
+            font-weight: 700;
+        }}
+
+        .change-status {{
+            margin-top: 5px;
+
+            color: var(--blue-light);
+        }}
+
+        .change-item ul {{
+            margin: 8px 0 0;
+
+            padding-left: 20px;
+
+            color: var(--muted);
+        }}
+
+        .no-changes {{
+            padding-top: 12px;
+
+            color: var(--muted);
         }}
 
         .controls {{
             display: flex;
             flex-wrap: wrap;
+
             gap: 12px;
+
             align-items: center;
 
             background: var(--panel);
+
             border: 1px solid var(--border);
             border-radius: 14px;
 
             padding: 16px;
+
             margin-bottom: 18px;
         }}
 
         input[type="text"] {{
             flex: 1;
+
             min-width: 250px;
 
             background: var(--bg-secondary);
+
             border: 1px solid var(--border);
             border-radius: 9px;
 
             color: var(--text);
+
             padding: 10px 14px;
 
             font-size: 0.95rem;
+
             outline: none;
         }}
 
@@ -305,12 +455,14 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         button {{
             background: #13263e;
+
             color: var(--text);
 
             border: 1px solid var(--border);
             border-radius: 8px;
 
             padding: 9px 14px;
+
             cursor: pointer;
         }}
 
@@ -320,15 +472,19 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         button.active {{
             background: var(--blue);
+
             border-color: var(--blue);
         }}
 
         .installed-filter {{
             display: flex;
+
             align-items: center;
+
             gap: 7px;
 
             color: var(--muted);
+
             user-select: none;
         }}
 
@@ -343,28 +499,37 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         table {{
             width: 100%;
+
             border-collapse: collapse;
+
             font-size: 0.88rem;
         }}
 
         th {{
             position: sticky;
+
             top: 0;
+
             z-index: 2;
 
             background: #0d1b2d;
+
             color: #bcd0e6;
 
             text-align: left;
+
             white-space: nowrap;
 
             padding: 13px 12px;
+
             border-bottom: 1px solid var(--border);
         }}
 
         td {{
             padding: 11px 12px;
+
             border-bottom: 1px solid #172c45;
+
             vertical-align: middle;
         }}
 
@@ -374,47 +539,57 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 
         .appid {{
             color: var(--muted);
+
             font-family: monospace;
         }}
 
         .game-name {{
             font-weight: 600;
+
             white-space: nowrap;
         }}
 
         .status {{
             display: inline-block;
+
             min-width: 76px;
 
             text-align: center;
+
             font-weight: 600;
 
             border-radius: 20px;
+
             padding: 5px 10px;
         }}
 
         .status-native {{
             color: #6ee7b7;
+
             background: rgba(52, 211, 153, 0.13);
         }}
 
         .status-works {{
             color: #86efac;
+
             background: rgba(34, 197, 94, 0.13);
         }}
 
         .status-partial {{
             color: #fde047;
+
             background: rgba(234, 179, 8, 0.13);
         }}
 
         .status-broken {{
             color: #fca5a5;
+
             background: rgba(239, 68, 68, 0.13);
         }}
 
         .status-unknown {{
             color: #cbd5e1;
+
             background: rgba(148, 163, 184, 0.13);
         }}
 
@@ -445,53 +620,92 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 <div class="cards">
 
     <div class="card">
-        <div class="card-label">Gesamt</div>
-        <div class="card-value">{len(entries)}</div>
+        <div class="card-label">
+            Gesamt
+        </div>
+
+        <div class="card-value">
+            {len(entries)}
+        </div>
     </div>
 
     <div class="card">
-        <div class="card-label">Native</div>
+        <div class="card-label">
+            Native
+        </div>
+
         <div class="card-value">
             {status_counts["Native"]}
         </div>
     </div>
 
     <div class="card">
-        <div class="card-label">Works</div>
+        <div class="card-label">
+            Works
+        </div>
+
         <div class="card-value">
             {status_counts["Works"]}
         </div>
     </div>
 
     <div class="card">
-        <div class="card-label">Partial</div>
+        <div class="card-label">
+            Partial
+        </div>
+
         <div class="card-value">
             {status_counts["Partial"]}
         </div>
     </div>
 
     <div class="card">
-        <div class="card-label">Broken</div>
+        <div class="card-label">
+            Broken
+        </div>
+
         <div class="card-value">
             {status_counts["Broken"]}
         </div>
     </div>
 
     <div class="card">
-        <div class="card-label">Unknown</div>
+        <div class="card-label">
+            Unknown
+        </div>
+
         <div class="card-value">
             {status_counts["Unknown"]}
         </div>
     </div>
 
     <div class="card">
-        <div class="card-label">Installiert</div>
+        <div class="card-label">
+            Installiert
+        </div>
+
         <div class="card-value">
             {installed_count}
         </div>
     </div>
 
 </div>
+
+<details class="changes-panel" open>
+
+    <summary>
+        Änderungen seit letzter Prüfung
+
+        <span class="change-count">
+            {len(changes)}
+        </span>
+    </summary>
+
+    <div class="changes-content">
+        {changes_html}
+    </div>
+
+</details>
 
 <div class="controls">
 
@@ -545,12 +759,15 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
     </button>
 
     <label class="installed-filter">
+
         <input
             id="installedOnly"
             type="checkbox"
             onchange="applyFilters()"
         >
+
         Nur installiert
+
     </label>
 
 </div>
@@ -560,6 +777,7 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
 <table id="games">
 
 <thead>
+
 <tr>
     <th>AppID</th>
     <th>Spiel</th>
@@ -574,6 +792,7 @@ def write_html_report(entries: list[GameReportEntry]) -> Path:
     <th>Anti-Cheat Systeme</th>
     <th>Installiert</th>
 </tr>
+
 </thead>
 
 <tbody>

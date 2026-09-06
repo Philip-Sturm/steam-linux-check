@@ -9,3 +9,6 @@ cache/
 
 # Local configuration
 .env
+
+# Local state / previous reports
+state/

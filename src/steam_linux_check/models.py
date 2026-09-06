@@ -87,3 +87,12 @@ class GameReportEntry:
     anticheats: list[str]
 
     installed: bool
+
+@dataclass
+class ReportChange:
+    app_id: int
+    name: str
+    change_type: str
+    old_status: str | None
+    new_status: str | None
+    details: list[str]
