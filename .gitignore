@@ -1,0 +1,11 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated data
+output/
+cache/
+
+# Local configuration
+.env
